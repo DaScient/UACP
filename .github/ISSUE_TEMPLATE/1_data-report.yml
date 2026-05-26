@@ -1,0 +1,82 @@
+name: "📡 UAP Data Report"
+description: "Submit a new UAP / UAS sighting or sensor dataset for ingestion into the hub."
+title: "[data-report]: <short, factual summary>"
+labels: ["data-report", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for contributing observational data to the **Global UAP Intelligence Hub**.
+
+        > ⚠️ Before submitting, please read
+        > [`docs/LEGAL_COMPLIANCE.md`](../blob/main/docs/LEGAL_COMPLIANCE.md).
+        > **Never** attach ITAR/EAR-controlled, classified, or unlawfully obtained material.
+
+  - type: input
+    id: event_id
+    attributes:
+      label: "Event ID (UUID, optional)"
+      description: "If you already have a UUID for this event, paste it here. Otherwise leave blank — one will be assigned."
+      placeholder: "e.g. 5b6f2e08-9d8a-4b39-9c0a-3c5d2c5d4e6f"
+    validations:
+      required: false
+
+  - type: input
+    id: timestamp_utc
+    attributes:
+      label: "Timestamp (UTC, ISO-8601)"
+      placeholder: "2024-07-15T03:42:17.000000Z"
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: "Location (lat, lon, altitude_m — WGS-84)"
+      placeholder: "33.9425, -118.4081, 32.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sensor_type
+    attributes:
+      label: "Sensor Type"
+      options:
+        - UNKNOWN
+        - OPTICAL
+        - INFRARED
+        - RADAR
+        - RF_SIGNAL
+        - EYEWITNESS
+        - OTHER
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Narrative Description"
+      description: "What was observed? Include kinematics, lighting conditions, witnesses, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: "Attachments / URIs"
+      description: "Local volume URIs (local://...) or cloud URIs (cloud://...) for raw files. One per line."
+      placeholder: |
+        local://volume/eventXYZ/video.mp4
+        cloud://bucket/telemetry.csv
+
+  - type: checkboxes
+    id: compliance
+    attributes:
+      label: "Legal & Ethical Acknowledgements"
+      options:
+        - label: "I confirm this data is **not** ITAR/EAR-controlled or classified."
+          required: true
+        - label: "I confirm I have the legal right to share this material."
+          required: true
+        - label: "I have read the Contributor Code of Conduct."
+          required: true

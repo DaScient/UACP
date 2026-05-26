@@ -1,0 +1,83 @@
+# docker/dev.docker-compose.yml
+#
+# Zero-dependency local development stack for the Global UAP Intelligence Hub.
+# All persistence is on the host filesystem under ./volumes/; no cloud
+# credentials required.
+#
+# Usage:
+#   docker compose -f docker/dev.docker-compose.yml up --build
+
+services:
+
+  # -----------------------------------------------------------------------
+  # MinIO — S3-compatible local object store.
+  # -----------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: uacp-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     uacp-dev
+      MINIO_ROOT_PASSWORD: uacp-dev-secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - ../volumes/local-s3-mock/data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -----------------------------------------------------------------------
+  # ChromaDB — local vector store.
+  # -----------------------------------------------------------------------
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: uacp-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../volumes/local-vector-db:/chroma/chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+
+  # -----------------------------------------------------------------------
+  # Python ingestion worker.
+  # -----------------------------------------------------------------------
+  ingestion-worker:
+    build:
+      context: ../services/ingestion-worker
+      dockerfile: Dockerfile
+    container_name: uacp-ingestion-worker
+    depends_on:
+      minio:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    environment:
+      OBJECT_STORE_ENDPOINT: http://minio:9000
+      OBJECT_STORE_ACCESS_KEY: uacp-dev
+      OBJECT_STORE_SECRET_KEY: uacp-dev-secret
+      VECTOR_DB_HOST:        http://chromadb:8000
+    volumes:
+      - ../volumes/local-s3-mock:/var/uacp/local-s3-mock
+      - ../volumes/local-vector-db:/var/uacp/local-vector-db
+
+  # -----------------------------------------------------------------------
+  # Next.js dev dashboard (hot-reload).
+  # -----------------------------------------------------------------------
+  web-dashboard:
+    build:
+      context: ../services/web-dashboard
+      dockerfile: Dockerfile.dev
+    container_name: uacp-web-dashboard
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../services/web-dashboard:/app
+      - /app/node_modules
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8080

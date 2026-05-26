@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uacp.dascient.org/data-schemas/cross_map_dictionary.json",
+  "title": "UACP Universal Cross-Mapping Dictionary",
+  "description": "Universal data translation schema that ingests, cleanses, and maps legacy structures from foundational open-source UAP platforms (NUFORC, MUFON, Enigma Labs, UAPx, Sky360) into the single Protocol Buffer contract defined in data-schemas/telemetry.proto (`uacp.telemetry.v1.UapEvent`).",
+  "version": "1.0.0",
+  "canonical_target": {
+    "proto_file": "data-schemas/telemetry.proto",
+    "proto_package": "uacp.telemetry.v1",
+    "root_message": "UapEvent"
+  },
+  "common_normalisers": {
+    "timestamp_to_iso8601": {
+      "description": "Coerce any legacy textual date/time field into an ISO-8601 UTC timestamp string with nanosecond precision (so it round-trips losslessly through google.protobuf.Timestamp).",
+      "accepted_input_formats": [
+        "YYYY-MM-DD",
+        "MM/DD/YYYY",
+        "YYYY-MM-DD HH:MM",
+        "YYYY-MM-DDTHH:MM:SS",
+        "YYYY-MM-DDTHH:MM:SSZ",
+        "YYYY-MM-DDTHH:MM:SS.ffffffZ",
+        "natural language (e.g. 'late evening, June 1989')"
+      ],
+      "fallback_timezone": "UTC",
+      "imprecise_input_policy": "snap to midnight UTC of the stated day; set `signature.kinematics_annotated.timestamp_precision_seconds` to the corresponding granularity (86400 for day-only, 3600 for hour-only, etc.)"
+    },
+    "geo_to_wgs84": {
+      "description": "Coerce any (state, country) or (city, state) tuple into a WGS-84 GeoLocation. Use the offline GeoNames cities1000 dump shipped under data-schemas/refdata/ to avoid network lookups.",
+      "altitude_default_meters": 0,
+      "missing_coordinate_policy": "leave latitude/longitude as 0.0/0.0 and add an `imprecise_location` tag to `signature.kinematics_annotated.tags`"
+    },
+    "shape_label_normaliser": {
+      "description": "Map legacy free-form shape strings to the canonical `Shape` enum from telemetry.proto. Unknown labels fall through to SHAPE_UNKNOWN.",
+      "table": {
+        "tic tac":            "SHAPE_TIC_TAC",
+        "tic-tac":            "SHAPE_TIC_TAC",
+        "pill":               "SHAPE_TIC_TAC",
+        "cigar":              "SHAPE_TIC_TAC",
+        "sphere":             "SHAPE_SPHERE",
+        "orb":                "SHAPE_SPHERE",
+        "ball":               "SHAPE_SPHERE",
+        "fireball":           "SHAPE_SPHERE",
+        "disk":               "SHAPE_DISC",
+        "disc":               "SHAPE_DISC",
+        "saucer":             "SHAPE_DISC",
+        "oval":               "SHAPE_DISC",
+        "triangle":           "SHAPE_TRIANGLE",
+        "triangular":         "SHAPE_TRIANGLE",
+        "delta":               "SHAPE_TRIANGLE",
+        "boomerang":          "SHAPE_TRIANGLE",
+        "chevron":            "SHAPE_TRIANGLE"
+      }
+    },
+    "sensor_type_default": "SENSOR_TYPE_EYEWITNESS"
+  },
+  "sources": {
+    "NUFORC": {
+      "description": "National UFO Reporting Center — unstructured text reports, historical state/country strings.",
+      "stream_kind": "batch_csv",
+      "ingest_endpoints": {
+        "primary": "https://nuforc.org/databank/",
+        "format": "html-table | csv-export"
+      },
+      "field_map": {
+        "occurred":     { "target": "timestamp",                       "normaliser": "timestamp_to_iso8601" },
+        "reported":     { "target": "signature.kinematics_annotated.nuforc_reported_at", "normaliser": "timestamp_to_iso8601" },
+        "city":         { "target": "signature.kinematics_annotated.city",          "normaliser": null },
+        "state":        { "target": "location",                         "normaliser": "geo_to_wgs84" },
+        "country":      { "target": "location",                         "normaliser": "geo_to_wgs84" },
+        "shape":        { "target": "classification.assigned_shape",    "normaliser": "shape_label_normaliser" },
+        "duration":     { "target": "signature.kinematics_annotated.duration_text", "normaliser": null },
+        "summary":      { "target": "signature.kinematics_annotated.narrative",     "normaliser": null }
+      },
+      "post_map_rules": [
+        "set sensor_type = SENSOR_TYPE_EYEWITNESS",
+        "set classification.confidence_score = 0.30 (legacy single-witness uncorroborated)",
+        "set classification.is_anomalous = false (default; ingestion classifier may override)"
+      ]
+    },
+    "MUFON": {
+      "description": "Mutual UFO Network — Case Management System (CMS) export.",
+      "stream_kind": "batch_csv",
+      "ingest_endpoints": {
+        "primary": "https://mufoncms.com/",
+        "format": "csv-export | API (member-restricted)"
+      },
+      "field_map": {
+        "Date Submitted":   { "target": "signature.kinematics_annotated.mufon_submitted_at", "normaliser": "timestamp_to_iso8601" },
+        "Date of Event":    { "target": "timestamp",                                          "normaliser": "timestamp_to_iso8601" },
+        "Latitude":         { "target": "location.latitude",                                  "normaliser": null },
+        "Longitude":        { "target": "location.longitude",                                 "normaliser": null },
+        "City":             { "target": "signature.kinematics_annotated.city",                "normaliser": null },
+        "Region":           { "target": "signature.kinematics_annotated.region",              "normaliser": null },
+        "Country":          { "target": "signature.kinematics_annotated.country",             "normaliser": null },
+        "Distance":         { "target": "signature.estimated_size_meters",                    "normaliser": "feet_to_meters_if_imperial" },
+        "Shape":            { "target": "classification.assigned_shape",                     "normaliser": "shape_label_normaliser" },
+        "Long Description": { "target": "signature.kinematics_annotated.narrative",          "normaliser": null }
+      },
+      "post_map_rules": [
+        "set sensor_type = SENSOR_TYPE_EYEWITNESS",
+        "set classification.confidence_score = 0.45 (legacy MUFON triaged report)"
+      ]
+    },
+    "EnigmaLabs": {
+      "description": "Enigma Labs mobile-app sightings — structured JSON with smartphone sensor telemetry.",
+      "stream_kind": "rest_json",
+      "ingest_endpoints": {
+        "primary": "https://enigmalabs.io/api/v1/sightings",
+        "format": "application/json"
+      },
+      "field_map": {
+        "sightingId":          { "target": "event_id",                                       "normaliser": "ensure_uuid_v5" },
+        "reportedAt":          { "target": "timestamp",                                      "normaliser": "timestamp_to_iso8601" },
+        "geo.lat":             { "target": "location.latitude",                              "normaliser": null },
+        "geo.lon":             { "target": "location.longitude",                             "normaliser": null },
+        "geo.alt":             { "target": "location.altitude_meters",                       "normaliser": null },
+        "sensor.cameraModel":  { "target": "signature.kinematics_annotated.camera_model",    "normaliser": null },
+        "sensor.focalLength":  { "target": "signature.kinematics_annotated.focal_length_mm", "normaliser": null },
+        "sensor.imuStream":    { "target": "signature.kinematics_annotated.imu_stream",      "normaliser": "json_passthrough" },
+        "confidenceScore":     { "target": "classification.confidence_score",                "normaliser": "rescale_0_100_to_0_1" },
+        "shapeGuess":          { "target": "classification.assigned_shape",                  "normaliser": "shape_label_normaliser" },
+        "attachments":         { "target": "attachments",                                    "normaliser": "rewrite_to_local_or_cloud_uri" }
+      },
+      "post_map_rules": [
+        "set sensor_type = SENSOR_TYPE_OPTICAL",
+        "if sensor.imuStream non-empty → classification.is_anomalous_candidate = true (handed off to ingestion-worker classifier)"
+      ]
+    },
+    "UAPx": {
+      "description": "UAPx automated sky-tracking stations — streaming multi-spectral feeds (optical, IR, RF).",
+      "stream_kind": "websocket_jsonl",
+      "ingest_endpoints": {
+        "primary": "wss://uapx.org/api/stream/v1",
+        "format": "application/jsonl",
+        "reconnect_backoff_seconds": [1, 2, 4, 8, 16, 30]
+      },
+      "field_map": {
+        "track_id":            { "target": "event_id",                                       "normaliser": "ensure_uuid_v5" },
+        "t_utc":               { "target": "timestamp",                                      "normaliser": "timestamp_to_iso8601" },
+        "station.lat":         { "target": "location.latitude",                              "normaliser": null },
+        "station.lon":         { "target": "location.longitude",                             "normaliser": null },
+        "station.alt_m":       { "target": "location.altitude_meters",                       "normaliser": null },
+        "cam.band":            { "target": "signature.kinematics_annotated.spectral_band",   "normaliser": null },
+        "cam.fov_deg":         { "target": "signature.kinematics_annotated.camera_fov_deg",  "normaliser": null },
+        "cam.exposure_us":     { "target": "signature.kinematics_annotated.exposure_us",     "normaliser": null },
+        "track.az_deg":        { "target": "signature.kinematics_annotated.azimuth_deg",     "normaliser": "deg_to_rad_persisted_as_both" },
+        "track.el_deg":        { "target": "signature.kinematics_annotated.elevation_deg",   "normaliser": "deg_to_rad_persisted_as_both" },
+        "track.rcs_m2":        { "target": "signature.kinematics_annotated.radar_cross_section_m2", "normaliser": null }
+      },
+      "post_map_rules": [
+        "set sensor_type = SENSOR_TYPE_OPTICAL when cam.band ∈ {visible, near_ir}; SENSOR_TYPE_INFRARED for thermal; SENSOR_TYPE_RADAR when track.rcs_m2 present"
+      ]
+    },
+    "Sky360": {
+      "description": "Sky360 all-sky cameras — community-run continuous-recording feeds.",
+      "stream_kind": "websocket_jsonl",
+      "ingest_endpoints": {
+        "primary": "wss://sky360.org/api/v1/feed",
+        "format": "application/jsonl",
+        "reconnect_backoff_seconds": [1, 2, 4, 8, 16, 30]
+      },
+      "field_map": {
+        "id":                 { "target": "event_id",                                       "normaliser": "ensure_uuid_v5" },
+        "ts":                 { "target": "timestamp",                                      "normaliser": "timestamp_to_iso8601" },
+        "lat":                { "target": "location.latitude",                              "normaliser": null },
+        "lon":                { "target": "location.longitude",                             "normaliser": null },
+        "alt":                { "target": "location.altitude_meters",                       "normaliser": null },
+        "object.bbox":        { "target": "signature.kinematics_annotated.bbox",            "normaliser": "json_passthrough" },
+        "object.area_px":     { "target": "signature.kinematics_annotated.area_px",         "normaliser": null },
+        "object.speed_px_s":  { "target": "signature.kinematics_annotated.speed_px_per_s",  "normaliser": null },
+        "camera.fov_deg":     { "target": "signature.kinematics_annotated.camera_fov_deg",  "normaliser": null },
+        "camera.focal_mm":    { "target": "signature.kinematics_annotated.focal_length_mm", "normaliser": null },
+        "frame_url":          { "target": "attachments",                                    "normaliser": "rewrite_to_local_or_cloud_uri" }
+      },
+      "post_map_rules": [
+        "set sensor_type = SENSOR_TYPE_OPTICAL",
+        "classification stage: feed object.bbox sequence into services/math-engine for angular-velocity → ECEF speed lift"
+      ]
+    }
+  },
+  "supplementary_normalisers": {
+    "feet_to_meters_if_imperial": {
+      "description": "Convert distance figures whose units are inferred to be imperial (e.g. trailing 'ft', 'feet', or context-tagged as US-source) into metric metres.",
+      "factor": 0.3048
+    },
+    "ensure_uuid_v5": {
+      "description": "Hash the legacy primary key into a deterministic UUIDv5 in the `uacp.telemetry` namespace so re-ingesting the same source row produces the same canonical event_id.",
+      "namespace_uuid": "1b671a64-40d5-491e-99b0-da01ff1f3341"
+    },
+    "rescale_0_100_to_0_1": {
+      "description": "Linear rescale of a [0, 100] confidence score into [0, 1]."
+    },
+    "rewrite_to_local_or_cloud_uri": {
+      "description": "Rewrite raw HTTP(S) attachment URLs to the project's `<scheme>://<path>` convention. Outbound HTTP URLs are first mirrored into MinIO; the rewritten URL takes the form `cloud://<bucket>/<event_id>/<basename>`."
+    },
+    "deg_to_rad_persisted_as_both": {
+      "description": "Persist both the original degrees value and the radians value in the annotated kinematics blob so downstream consumers can pick whichever they prefer."
+    },
+    "json_passthrough": {
+      "description": "Embed the raw JSON sub-tree verbatim into `signature.kinematics_annotated` without further transformation."
+    }
+  }
+}

@@ -135,6 +135,70 @@ the publish root. This is mission-critical and is asserted explicitly in
 
 ---
 
+## 4½. Feature Modules
+
+The following modules implement the immersive sighting-builder, community
+triangulation, tactical analytics, and universal data-mapping subsystems
+called out in the architecture roadmap.
+
+### D. 3D Spatial Canvas & "Street-View" Reconstruction
+
+[`services/web-dashboard/components/Canvas3D.ts`](services/web-dashboard/components/Canvas3D.ts)
+
+* Pure-TypeScript math layer (`viewportToSkyVector`, `skyVectorToEnu`,
+  `evaluateOcclusion`) translates mouse / vector-arrow input on the
+  sky-dome canvas into Azimuth (θ), Elevation (φ), and FOV vectors.
+* Open-stack adapters wire OpenStreetMap raster/vector tiles, Open-Elevation,
+  and OSM 3D building footprints. Heavy 3-D libraries (`three`,
+  `@react-three/fiber`, `maplibre-gl`) are loaded **dynamically** so the
+  static build remains dependency-free.
+* DeviceOrientation API integration captures the witness's true-North heading
+  on mobile browsers and serialises a stable JSON payload
+  (`serialiseSightingPayload`) that the api-gateway can deduplicate byte-for-byte.
+
+### E. Collaborative Multi-Witness Intersection Router
+
+[`services/api-gateway/triangulation/`](services/api-gateway/triangulation/)
+
+* `Router.Ingest` performs spatio-temporal clustering with ΔX ≤ 50 km and
+  ΔT ≤ 10 minutes, fusing matching reports into a **Community Incident Node**.
+* When a CIN crosses ≥ 2 unique viewpoints the cluster is forwarded to the
+  Rust `math-engine` via the pluggable `MathEngine` interface, and the
+  resulting ECEF intercept / altitude / flight vector are written back onto
+  the CIN.
+* The reference `MeshNotifier` fans out localised WebSocket and WebPush
+  alerts to every subscriber inside `NotifyRadiusMeters` of the centroid.
+* Unit tests live next to the implementation; run with
+  `cd services/api-gateway && go test ./...`.
+
+### F. Tactical "Order of Battle" Analytics Layer
+
+[`services/ingestion-worker/oob/`](services/ingestion-worker/oob/)
+
+* `EntityStateMatrix` indexes every event along three OoB axes: **Domain
+  Presence** (space / atmospheric / trans-medium / sub-surface),
+  **Kinematic Traits** (loitering / linear / rapid / swarm), and
+  **Electronic Signature** (RF/EM spike / grid anomaly / optical cloak).
+* `CorrelativeBaselines` cross-references each record against a curated DB
+  of military airframes, radar outposts, commercial corridors, and
+  experimental launch windows.
+* `AnomalousGapIdentifier` flags entries that break conventional physics
+  baselines (e.g. hypersonic flight without a thermal signature),
+  isolating true unknowns from routine aerospace activity.
+* Tests: `cd services/ingestion-worker && python -m unittest oob.test_oob`.
+
+### B. Unified Schema Cross-Mapping
+
+[`data-schemas/cross_map_dictionary.json`](data-schemas/cross_map_dictionary.json)
+
+A self-describing JSON dictionary that maps legacy NUFORC, MUFON, Enigma
+Labs, UAPx, and Sky360 records onto the canonical `uacp.telemetry.v1.UapEvent`
+proto. Each source declares its `field_map`, `stream_kind`, ingest endpoint,
+and post-map rules so the ingestion worker can be configured from data
+alone — no per-source code branches required.
+
+---
+
 ## 5. Contributing
 
 Please read:

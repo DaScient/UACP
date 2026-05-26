@@ -1,0 +1,138 @@
+# =============================================================================
+# Deploy the static web dashboard, the WASM math engine, and the public
+# Protobuf schemas to GitHub Pages.
+#
+# 🚨 MISSION-CRITICAL: the `gh-pages-root/.nojekyll` file MUST be present at
+# the publish root. Without it, GitHub Pages' Jekyll layer silently strips
+# any path beginning with `_` (e.g. Next.js `_next/*`), and the dashboard
+# breaks invisibly in production.
+# =============================================================================
+
+name: Deploy Static Hub & Model Artifacts to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/web-dashboard/**'
+      - 'services/math-engine/**'
+      - 'data-schemas/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # required by peaceiris/actions-gh-pages
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # -----------------------------------------------------------------
+      # 1. Checkout (full history; force_orphan publish needs no history,
+      #    but full depth makes debugging easier).
+      # -----------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------
+      # 2. Polyglot toolchains: Node 20, Python 3.11, Rust stable.
+      # -----------------------------------------------------------------
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/web-dashboard/package-lock.json
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Rust (stable) + wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: 'latest'
+
+      # -----------------------------------------------------------------
+      # 3. Compile the Rust math engine to WebAssembly.
+      # -----------------------------------------------------------------
+      - name: Build math-engine WASM
+        working-directory: services/math-engine
+        run: wasm-pack build --release --target web --out-dir pkg --features wasm
+
+      # -----------------------------------------------------------------
+      # 4. Build the static Next.js dashboard.
+      # -----------------------------------------------------------------
+      - name: Build web-dashboard
+        working-directory: services/web-dashboard
+        run: |
+          npm ci
+          npm run build
+
+      # -----------------------------------------------------------------
+      # 5. Inject COOP/COEP headers (enables SharedArrayBuffer in the
+      #    browser → WASM threading). GitHub Pages does not honour
+      #    `_headers` itself, but downstream reverse-proxies / Cloudflare
+      #    do, and so does Netlify / a custom worker.
+      # -----------------------------------------------------------------
+      - name: Inject security headers (_headers)
+        working-directory: services/web-dashboard
+        run: |
+          mkdir -p out
+          cat > out/_headers <<'EOF'
+          /*.html
+            Cross-Origin-Opener-Policy: same-origin
+            Cross-Origin-Embedder-Policy: require-corp
+          /*.wasm
+            Cross-Origin-Opener-Policy: same-origin
+            Cross-Origin-Embedder-Policy: require-corp
+          EOF
+
+      # -----------------------------------------------------------------
+      # 6. Assemble the deployment artifact.
+      # -----------------------------------------------------------------
+      - name: Prepare gh-pages-root/
+        run: |
+          set -euxo pipefail
+          rm -rf gh-pages-root
+          mkdir -p gh-pages-root/wasm-engine gh-pages-root/schemas
+
+          # 6a. Next.js static export.
+          cp -R services/web-dashboard/out/. gh-pages-root/
+
+          # 6b. WASM artifacts.
+          cp -R services/math-engine/pkg/. gh-pages-root/wasm-engine/
+
+          # 6c. Public Protobuf schemas.
+          cp -R data-schemas/. gh-pages-root/schemas/
+
+          # 6d. 🚨 MISSION-CRITICAL: bypass Jekyll. Without this file, any
+          #     path beginning with `_` (e.g. `_next/`) is silently dropped
+          #     by Pages and the dashboard breaks.
+          touch gh-pages-root/.nojekyll
+
+          # 6e. Sanity check.
+          test -f gh-pages-root/.nojekyll
+          ls -la gh-pages-root | head -20
+
+      # -----------------------------------------------------------------
+      # 7. Publish to gh-pages branch.
+      # -----------------------------------------------------------------
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:  ./gh-pages-root
+          publish_branch: gh-pages
+          force_orphan: true

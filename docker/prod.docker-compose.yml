@@ -1,0 +1,64 @@
+# docker/prod.docker-compose.yml
+#
+# Production-shape compose file. The local MinIO / ChromaDB services are gone
+# — every external dependency is now reached via env-injected cloud endpoint
+# URLs. The ingestion worker runs as a decoupled Celery consumer fed by SQS.
+#
+# Required environment:
+#   OBJECT_STORE_ENDPOINT      e.g. https://s3.amazonaws.com
+#   OBJECT_STORE_BUCKET        e.g. uacp-prod-raw
+#   OBJECT_STORE_ACCESS_KEY    IAM access key
+#   OBJECT_STORE_SECRET_KEY    IAM secret key
+#   VECTOR_DB_HOST             e.g. https://prod-tenant.pinecone.io
+#   VECTOR_DB_API_KEY          vendor API key
+#   AWS_SQS_QUEUE_URL          full URL of the ingestion queue
+#   AWS_REGION                 e.g. us-east-1
+#   API_GATEWAY_PUBLIC_URL     e.g. https://api.uacp.example.org
+
+services:
+
+  api-gateway:
+    image: ghcr.io/dascient/uacp-api-gateway:latest
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      OBJECT_STORE_ENDPOINT:    "${OBJECT_STORE_ENDPOINT}"
+      OBJECT_STORE_BUCKET:      "${OBJECT_STORE_BUCKET}"
+      OBJECT_STORE_ACCESS_KEY:  "${OBJECT_STORE_ACCESS_KEY}"
+      OBJECT_STORE_SECRET_KEY:  "${OBJECT_STORE_SECRET_KEY}"
+      AWS_SQS_QUEUE_URL:        "${AWS_SQS_QUEUE_URL}"
+      AWS_REGION:               "${AWS_REGION}"
+
+  ingestion-worker:
+    image: ghcr.io/dascient/uacp-ingestion-worker:latest
+    restart: always
+    command: ["celery", "-A", "worker.app", "worker",
+              "--loglevel=INFO", "--concurrency=4"]
+    environment:
+      OBJECT_STORE_ENDPOINT:    "${OBJECT_STORE_ENDPOINT}"
+      OBJECT_STORE_BUCKET:      "${OBJECT_STORE_BUCKET}"
+      OBJECT_STORE_ACCESS_KEY:  "${OBJECT_STORE_ACCESS_KEY}"
+      OBJECT_STORE_SECRET_KEY:  "${OBJECT_STORE_SECRET_KEY}"
+      VECTOR_DB_HOST:           "${VECTOR_DB_HOST}"
+      VECTOR_DB_API_KEY:        "${VECTOR_DB_API_KEY}"
+      AWS_SQS_QUEUE_URL:        "${AWS_SQS_QUEUE_URL}"
+      AWS_REGION:               "${AWS_REGION}"
+      CELERY_BROKER_URL:        "sqs://"
+
+  math-engine:
+    # Headless gRPC server fronting the native Rust math engine.
+    image: ghcr.io/dascient/uacp-math-engine:latest
+    restart: always
+    ports:
+      - "50051:50051"
+
+  web-dashboard:
+    # Static export is served from GitHub Pages in prod; this container is
+    # only used for SSR previews / staging.
+    image: ghcr.io/dascient/uacp-web-dashboard:latest
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE: "${API_GATEWAY_PUBLIC_URL}"

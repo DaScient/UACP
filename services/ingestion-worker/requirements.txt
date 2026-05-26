@@ -1,0 +1,14 @@
+# Core ingestion stack.
+python-magic>=0.4.27
+opencv-python-headless>=4.9
+numpy>=1.26
+pandas>=2.2
+unstructured[local-inference]>=0.13
+sentence-transformers>=2.7
+transformers>=4.41
+torch>=2.2
+
+# Cloud / queue runtime (used by prod compose).
+celery[redis]>=5.3
+boto3>=1.34
+chromadb>=0.5

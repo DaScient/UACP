@@ -1,0 +1,63 @@
+name: "🐛 Processing / Pipeline Bug"
+description: "Report a bug in the ingestion pipeline, math engine, classifier, or dashboard."
+title: "[bug]: <short summary>"
+labels: ["bug", "triage"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Affected Component"
+      options:
+        - "services/ingestion-worker (Python)"
+        - "services/math-engine (Rust / WASM)"
+        - "services/api-gateway"
+        - "services/web-dashboard (Next.js / React)"
+        - "docker / orchestration"
+        - ".github/workflows (CI/CD)"
+        - "docs / schemas"
+        - "other"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "Version / commit SHA"
+      placeholder: "main @ abc1234"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: "Reproduction steps"
+      description: "Minimal, deterministic steps to reproduce the bug."
+      placeholder: |
+        1. `docker compose -f docker/dev.docker-compose.yml up`
+        2. POST /ingest with sample.mp4
+        3. Observe stack trace in worker logs
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behaviour"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual behaviour (logs, stack traces)"
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: "Environment"
+      description: "OS, container runtime, Python/Rust/Node versions, GPU, etc."
+    validations:
+      required: true

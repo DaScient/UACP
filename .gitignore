@@ -1,0 +1,23 @@
+# Volumes (runtime state, never commit)
+volumes/local-s3-mock/*
+!volumes/local-s3-mock/.gitkeep
+volumes/local-vector-db/*
+!volumes/local-vector-db/.gitkeep
+
+# Rust
+**/target/
+**/pkg/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+
+# OS
+.DS_Store

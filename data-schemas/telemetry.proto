@@ -1,0 +1,108 @@
+// =============================================================================
+// Global UAP Intelligence Hub - Universal Telemetry Schema
+// -----------------------------------------------------------------------------
+// File:    data-schemas/telemetry.proto
+// Purpose: Single canonical, multi-modal record describing one UAP event.
+//          Every service in the hub (Python ingestion-worker, Rust math-engine,
+//          Go api-gateway, TS web-dashboard) is generated from this file.
+// =============================================================================
+
+syntax = "proto3";
+
+package uacp.telemetry.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package        = "github.com/DaScient/UACP/gen/go/telemetry;telemetryv1";
+option java_package      = "org.uacp.telemetry.v1";
+option java_multiple_files = true;
+option csharp_namespace  = "Uacp.Telemetry.V1";
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+// Type of the primary sensor that produced this observation.
+enum SensorType {
+  SENSOR_TYPE_UNKNOWN    = 0;
+  SENSOR_TYPE_OPTICAL    = 1;
+  SENSOR_TYPE_INFRARED   = 2;
+  SENSOR_TYPE_RADAR      = 3;
+  SENSOR_TYPE_RF_SIGNAL  = 4;
+  SENSOR_TYPE_EYEWITNESS = 5;
+  SENSOR_TYPE_OTHER      = 6;
+}
+
+// Coarse morphological shape assigned by the classifier.
+enum Shape {
+  SHAPE_UNKNOWN  = 0;
+  SHAPE_TIC_TAC  = 1;
+  SHAPE_SPHERE   = 2;
+  SHAPE_DISC     = 3;
+  SHAPE_TRIANGLE = 4;
+}
+
+// -----------------------------------------------------------------------------
+// Sub-messages
+// -----------------------------------------------------------------------------
+
+// WGS-84 geodetic coordinates. Altitude is metres above the WGS-84 ellipsoid.
+message GeoLocation {
+  double latitude        = 1;  // degrees, [-90, +90]
+  double longitude       = 2;  // degrees, [-180, +180]
+  double altitude_meters = 3;  // metres above WGS-84 ellipsoid
+}
+
+// Aggregated physical / kinematic signature of the target.
+message TargetSignature {
+  // JSON blob: free-form annotated kinematics (speed, accel, g-force, RCS,
+  // multi-station fused track, etc). Stored as JSON to keep the proto stable
+  // while the kinematics model evolves.
+  string kinematics_annotated         = 1;
+
+  // Peak measured radiant intensity (W·sr^-1). 0 when unknown.
+  float  max_luminance_watts_per_sr   = 2;
+
+  // Estimated longest linear dimension of the object (metres). 0 when unknown.
+  float  estimated_size_meters        = 3;
+}
+
+// Output of the auto-classification pipeline.
+message AutoClassification {
+  Shape assigned_shape    = 1;
+  float confidence_score  = 2;  // [0.0, 1.0]
+  bool  is_anomalous      = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Root message
+// -----------------------------------------------------------------------------
+
+// A single, fully-described UAP event. Any service producing or consuming
+// telemetry MUST round-trip through this message.
+message UapEvent {
+  // UUID (v4 or v5). Required, unique across the hub.
+  string                       event_id    = 1;
+
+  // Nanosecond-precision UTC timestamp.
+  google.protobuf.Timestamp    timestamp   = 2;
+
+  // WGS-84 location.
+  GeoLocation                  location    = 3;
+
+  // Primary sensor that produced this record.
+  SensorType                   sensor_type = 4;
+
+  // Physical / kinematic signature.
+  TargetSignature              signature   = 5;
+
+  // Raw file URIs in the project's `<scheme>://<path>` convention.
+  //   - local://volume/<event_id>/<filename>
+  //   - cloud://<bucket>/<key>
+  // Any filetype extension is accepted; the ingestion worker dispatches on
+  // MIME type, not extension.
+  repeated string              attachments = 6;
+
+  // Output of the auto-classification pipeline.
+  AutoClassification           classification = 7;
+}

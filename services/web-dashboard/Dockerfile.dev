@@ -1,0 +1,14 @@
+# services/web-dashboard/Dockerfile.dev
+# Dev-mode Next.js server with hot reload, mounted at /app via docker-compose.
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm install || npm install --package-lock-only && npm install
+
+COPY . /app
+
+EXPOSE 3000
+CMD ["npm", "run", "dev"]

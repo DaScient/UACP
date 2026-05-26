@@ -9,7 +9,7 @@
  *   3. Calls the WASM `calculateIntersectionGeocentric` function.
  *   4. Displays the resulting ECEF (x, y, z) intersection.
  *   5. Renders a placeholder classification JSON payload, including a red
- *      "ANOMALOUS" badge driven by `classification.anomalous_flag`.
+ *      "ANOMALOUS" badge driven by `classification.is_anomalous`.
  *
  * Styling: Tailwind CSS, dark/data-dense aesthetic.
  */
@@ -47,7 +47,7 @@ interface ClassificationPayload {
     speed_profile:     'Subsonic' | 'Supersonic' | 'Hypersonic' | 'Trans-Medium';
     mach_number:       number;
     altitude_m:        number;
-    anomalous_flag:    boolean;
+    is_anomalous:    boolean;
   };
   storage_routing_path: string;
 }
@@ -69,7 +69,7 @@ const DEMO_PAYLOAD: ClassificationPayload = {
     speed_profile:    'Hypersonic',
     mach_number:      8.4,
     altitude_m:       12_000,
-    anomalous_flag:   true,
+    is_anomalous:   true,
   },
   storage_routing_path:
     'data/processed/Hypersonic/Tic-Tac/demo-5b6f2e08-9d8a-4b39-9c0a-3c5d2c5d4e6f/',
@@ -126,7 +126,7 @@ export default function ClassificationViewer({
     }
   }, [wasm]);
 
-  const anomalous = DEMO_PAYLOAD.classification_metadata.anomalous_flag;
+  const anomalous = DEMO_PAYLOAD.classification_metadata.is_anomalous;
 
   return (
     <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -219,7 +219,7 @@ export default function ClassificationViewer({
         </pre>
         <p className="text-gray-500 text-xs mt-3">
           The backend will populate this object via the ingestion-worker
-          pipeline. Shape is shown by name; <code>anomalous_flag</code>
+          pipeline. Shape is shown by name; <code>is_anomalous</code>
           drives the badge colour.
         </p>
       </div>

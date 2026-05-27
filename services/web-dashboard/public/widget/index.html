@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>UFO·INTEL — Plug-and-play intelligence widget</title>
+  <meta name="description" content="Self-contained, client-side web component for live UFO/UAP release intelligence with BYO-key agentic assistant.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%235fd0c4'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050709;
+      --panel: #0a0d12;
+      --fg: #d6e0ee;
+      --fg-dim: #8593a8;
+      --accent: #5fd0c4;
+      --border: #1f2a3a;
+    }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+                 font-family: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, Menlo, monospace; }
+    body { padding: 28px 32px 60px; max-width: 1280px; margin: 0 auto; }
+    h1 { letter-spacing: 0.15em; text-transform: uppercase; font-size: 18px;
+         border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    h1 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+              background: var(--accent); box-shadow: 0 0 8px var(--accent); margin-right: 10px; }
+    p { color: var(--fg-dim); line-height: 1.55; }
+    code, pre {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 3px; padding: 1px 5px;
+    }
+    pre { padding: 10px 12px; overflow-x: auto; }
+    a { color: var(--accent); }
+    .grid { display: grid; gap: 18px; grid-template-columns: 1fr; }
+    .note { font-size: 12px; color: var(--fg-dim); }
+    section { margin-top: 28px; }
+    label { display: block; margin: 10px 0 4px; font-size: 11px;
+            color: var(--fg-dim); letter-spacing: 0.1em; text-transform: uppercase; }
+    input[type="url"], input[type="number"], select {
+      width: 100%; max-width: 520px;
+      background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+      border-radius: 3px; padding: 6px 8px; font: inherit;
+    }
+    .demo-bar {
+      display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0;
+    }
+    button {
+      font: inherit; color: inherit; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 3px; padding: 6px 12px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <h1><span class="dot"></span>UFO·INTEL — embeddable intelligence widget</h1>
+  <p>
+    A zero-backend, single-file <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_components">Web Component</a>
+    that any analyst can drop into an existing intranet portal. Live feed,
+    deep-analytics dashboard, and BYO-key agentic assistant — all running
+    entirely in the browser.
+  </p>
+
+  <section>
+    <h2 style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--fg-dim);">Live demo</h2>
+    <div class="demo-bar">
+      <label style="margin:0;align-self:center;">Source</label>
+      <input id="src" type="url" placeholder="https://…/index.json or RSS"
+             value="">
+      <label style="margin:0;align-self:center;">Refresh (ms)</label>
+      <input id="ref" type="number" min="5000" step="1000" value="30000" style="max-width:140px;">
+      <button id="apply">Apply</button>
+      <button id="sample">Load sample dataset</button>
+    </div>
+    <p class="note">
+      No data source is reachable in the public demo by default — paste your
+      own JSON/RSS endpoint, or click <em>Load sample dataset</em> to use a
+      bundled demonstration fixture so you can exercise every feature offline.
+    </p>
+
+    <ufo-intel-widget
+      id="widget"
+      refresh-interval="30000"
+      theme="dark"
+      llm-provider="openai"
+      llm-model="gpt-4o-mini"
+      style="display:block;margin-top:18px;"></ufo-intel-widget>
+  </section>
+
+  <section>
+    <h2 style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--fg-dim);">Embed snippet</h2>
+    <p class="note">Replace the script URL below with the deployment URL of your fork
+       (or a relative path if you self-host alongside your portal).</p>
+<pre>&lt;script type="module" src="https://dascient.github.io/UACP/widget/ufo-intel-widget.js"&gt;&lt;/script&gt;
+
+&lt;ufo-intel-widget
+  data-source="https://your-mirror.example/ufo/index.json"
+  refresh-interval="30000"
+  theme="dark"
+  llm-provider="openai"
+  llm-model="gpt-4o-mini"&gt;&lt;/ufo-intel-widget&gt;</pre>
+
+    <h3 style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--fg-dim);">Attributes</h3>
+    <ul class="note">
+      <li><code>data-source</code> — one or more whitespace-separated URLs (JSON, RSS, or Atom).</li>
+      <li><code>refresh-interval</code> — milliseconds between fetches (minimum 5000).</li>
+      <li><code>theme</code> — <code>dark</code> (default), <code>light</code>, or <code>compact</code>.</li>
+      <li><code>llm-provider</code> — <code>openai</code>, <code>anthropic</code>, or <code>local</code> (OpenAI-compatible).</li>
+      <li><code>llm-model</code> — model identifier passed to the provider.</li>
+      <li><code>api-key</code> — optional inline key (prefer <em>Settings → LLM provider</em> instead).</li>
+    </ul>
+
+    <h3 style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--fg-dim);">Privacy</h3>
+    <ul class="note">
+      <li>No telemetry. No external CDN required.</li>
+      <li>API key stored only in <code>localStorage</code> on this device.</li>
+      <li>The dataset is fetched directly from the source URL you configure and cached in IndexedDB.</li>
+      <li>RAG retrieval (TF-IDF) runs in the browser; only the top-K snippets are sent to the LLM.</li>
+      <li>An audit log of every refresh, query, and user action is kept locally and exportable.</li>
+    </ul>
+  </section>
+
+  <script type="module" src="./ufo-intel-widget.js"></script>
+  <script>
+    // ── Demo wiring ─────────────────────────────────────────────────────
+    const widget = document.getElementById('widget');
+    const srcInp = document.getElementById('src');
+    const refInp = document.getElementById('ref');
+
+    document.getElementById('apply').addEventListener('click', () => {
+      if (srcInp.value.trim()) widget.setAttribute('data-source', srcInp.value.trim());
+      if (refInp.value.trim()) widget.setAttribute('refresh-interval', refInp.value.trim());
+    });
+
+    // Bundled offline fixture — sourced from public DoD/Navy declassification
+    // narratives so analysts can exercise every feature without network access.
+    const SAMPLE = {
+      pdfs: [
+        { title: 'Preliminary Assessment: Unidentified Aerial Phenomena',
+          agency: 'ODNI', url: 'https://www.dni.gov/files/ODNI/documents/assessments/Prelimary-Assessment-UAP-20210625.pdf',
+          blurb: 'Office of the Director of National Intelligence 9-page preliminary assessment delivered to Congress, June 25 2021. Reviews 144 UAP reports from US government sources, 2004-2021.',
+          releaseDate: '2021-06-25' },
+        { title: '2022 Annual Report on Unidentified Aerial Phenomena',
+          agency: 'ODNI', url: 'https://www.dni.gov/files/ODNI/documents/assessments/Unclassified-2022-Annual-Report-UAP.pdf',
+          blurb: 'Annual report describing 510 UAP reports including 247 new ones. Highlights characterisation, transmedium concerns, and observation collection biases.',
+          releaseDate: '2023-01-12' },
+        { title: 'AARO Historical Record Report Volume I',
+          agency: 'AARO', url: 'https://www.aaro.mil/Portals/136/PDFs/HRRV1-08-Mar-2024-FINAL.pdf',
+          blurb: 'All-domain Anomaly Resolution Office historical review of US government involvement with UAP from 1945 to 2023. Volume I of two.',
+          releaseDate: '2024-03-08' },
+      ],
+      images: [
+        { title: 'GIMBAL — gun-camera still', agency: 'USN',
+          url: 'https://media.defense.gov/2020/Apr/27/2002288023/-1/-1/0/GIMBAL.MP4',
+          blurb: 'Forward-looking infrared image from F/A-18 sensor, Atlantic training range, 2015. Anomalous rotation observed.',
+          releaseDate: '2020-04-27' },
+        { title: 'GOFAST — sensor still', agency: 'USN',
+          url: 'https://media.defense.gov/2020/Apr/27/2002288024/-1/-1/0/GOFAST.MP4',
+          blurb: 'Low-altitude object tracked by FLIR pod, 2015. Apparent high transverse speed.',
+          releaseDate: '2020-04-27' },
+      ],
+      videos: [
+        { title: 'FLIR1 (Nimitz Tic-Tac)', agency: 'USN',
+          url: 'https://media.defense.gov/2020/Apr/27/2002288022/-1/-1/0/FLIR.MP4',
+          blurb: 'Released officially in 2020 by DOD; original 2004 USS Nimitz encounter.',
+          releaseDate: '2020-04-27' },
+        { title: 'AARO Case Resolution: Eglin AFB sphere', agency: 'AARO',
+          url: 'https://www.aaro.mil/Cases/',
+          blurb: 'Resolved as a balloon following photogrammetric review of multi-sensor track.',
+          releaseDate: '2024-09-15' },
+      ],
+    };
+
+    document.getElementById('sample').addEventListener('click', async () => {
+      const blob = new Blob([JSON.stringify(SAMPLE)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      widget.setAttribute('data-source', url);
+      srcInp.value = '(bundled sample)';
+    });
+
+    // Auto-load sample on first visit so the demo isn't blank.
+    if (!localStorage.getItem('ufo-intel-widget:sources') &&
+        !widget.getAttribute('data-source')) {
+      setTimeout(() => document.getElementById('sample').click(), 200);
+    }
+  </script>
+</body>
+</html>

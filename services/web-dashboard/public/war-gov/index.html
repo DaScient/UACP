@@ -223,7 +223,13 @@
         <div class="loading"><div class="spinner" aria-hidden="true"></div> Loading data…</div>
       </div>
 
-      <div id="graphContainer" class="graph-container" style="display:none" role="region" aria-label="Agency / document network graph">
+      <div id="graphModeToolbar" class="view-toggle" role="tablist" aria-label="Graph mode" style="display:none">
+        <button class="view-btn active" id="graphModeTopics" type="button" role="tab" aria-selected="true" aria-label="Topic and keyword co-occurrence network" title="Topic / keyword co-occurrence network">🧠 Topics</button>
+        <button class="view-btn" id="graphModeAgencies" type="button" role="tab" aria-selected="false" aria-label="Agency and document network" title="Agency ↔ document network">🏛️ Agencies</button>
+        <span style="font-size:11px;color:var(--text2);align-self:center;margin-left:6px">Node size = frequency · Edge width = co-occurrence intensity</span>
+      </div>
+
+      <div id="graphContainer" class="graph-container" style="display:none" role="region" aria-label="UAP topic / agency network graph">
         <div id="mynetwork"></div>
       </div>
     </main>
@@ -273,8 +279,66 @@
   let lastDataHash = null, previousFileCount = 0, selectedAgency = null;
   let refreshTimer = null, countdownTimer = null, secondsLeft = REFRESH_INTERVAL/1000;
   let currentView = 'list';
+  let graphMode   = 'topics'; // 'topics' (UAP keyword co-occurrence) | 'agencies' (original)
   let network = null;
   let visLoadPromise = null;
+
+  // ---------- UAP TOPIC-MODELING LEXICON ----------
+  // Domain-priority terms get boosted weight + accent color so analytically
+  // interesting connections (sightings, sensor modalities, programs, anomalous
+  // behaviors, agencies, materials, etc.) stand out in the co-occurrence graph.
+  const UAP_LEXICON = new Set([
+    // core phenomenon
+    'uap','ufo','uaps','ufos','anomalous','anomaly','phenomena','phenomenon',
+    'sighting','sightings','encounter','encounters','incident','incidents',
+    'craft','object','objects','vehicle','vehicles','orb','orbs','disc','disk',
+    'triangle','triangular','cigar','tic-tac','tictac','sphere','spherical',
+    // observation & sensors
+    'radar','sonar','infrared','ir','flir','lidar','sensor','sensors','telemetry',
+    'observation','observations','witness','witnesses','pilot','pilots','crew',
+    'video','photograph','photo','imagery','image','footage','recording',
+    // performance / behavior
+    'hypersonic','supersonic','transmedium','trans-medium','maneuver','maneuvers',
+    'acceleration','propulsion','silent','hover','hovering','luminous','glowing',
+    'plasma','metallic','signature','signatures',
+    // intel / programs / orgs
+    'classified','declassified','unclassified','redacted','secret','top-secret',
+    'intelligence','intel','briefing','memorandum','memo','report','reports',
+    'investigation','assessment','analysis',
+    'aaro','aatip','uaptf','pursue','aawsap','project','program','task','force',
+    'nasa','dod','navy','usaf','army','marines','faa','fbi','cia','nsa','dia',
+    'ufob','blue','book','grudge','sign','condon',
+    // events / locations / dates
+    'roswell','nimitz','tic','tic-tac','nellis','rendlesham','phoenix','lights',
+    'airspace','restricted','range','base','installation','nuclear',
+    // materials / effects
+    'material','materials','debris','metamaterial','isotope','isotopes',
+    'electromagnetic','em','interference','radiation','biological','effects',
+    // disclosure / policy
+    'disclosure','testimony','congressional','hearing','whistleblower',
+    'release','releases','foia','transparency','oversight'
+  ]);
+
+  // English stop words + filler terms unhelpful for topic modeling.
+  const STOP_WORDS = new Set([
+    'the','a','an','and','or','of','to','in','on','at','by','for','with','from',
+    'is','are','was','were','be','been','being','it','its','this','that','these',
+    'those','as','but','not','no','yes','if','then','so','than','too','very',
+    'can','will','would','should','could','may','might','must','do','does','did',
+    'have','has','had','having','i','you','he','she','we','they','them','his',
+    'her','their','our','your','my','me','us','him','about','into','over','under',
+    'after','before','between','through','during','until','while','out','up','down',
+    'off','again','once','any','all','each','every','some','such','only','same',
+    'other','more','most','less','least','further','also','here','there','when',
+    'where','why','how','what','which','who','whom','whose','said','says','say',
+    'one','two','three','new','now','per','via','etc','eg','ie','vs','within',
+    'page','pages','document','documents','file','files','pdf','image','video',
+    'release','released','dated','date','source','sources','title','description'
+  ]);
+
+  // Highlight color for terms that match the UAP lexicon.
+  const TOPIC_PRIMARY  = '#00d4aa'; // accent (UAP-priority terms)
+  const TOPIC_SECONDARY= '#5a6e8a'; // muted (generic high-frequency terms)
 
   // ---------- HELPERS ----------
   const $ = sel => document.querySelector(sel);
@@ -523,6 +587,15 @@
       (f.agency||'').toLowerCase().includes(term) ||
       (f.blurb||'').toLowerCase().includes(term));
 
+    if (graphMode === 'topics') {
+      buildTopicGraph(filtered, container);
+    } else {
+      buildAgencyGraph(filtered, container);
+    }
+  }
+
+  // -------- Agency / document network (original behavior) --------
+  function buildAgencyGraph(filtered, container){
     // Cap nodes on low-end devices to keep the layout responsive.
     const NODE_CAP = isLowEnd ? 120 : 800;
     const capped   = filtered.slice(0, NODE_CAP);
@@ -549,37 +622,8 @@
     $('#countInfo').textContent = `Graph: ${agencySet.size} agencies, ${capped.length} documents${truncNote}`;
 
     const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
-    const options = {
-      nodes:{borderWidth:1, shadow:!isLowEnd},
-      edges:{smooth:{type: isLowEnd ? 'continuous' : 'cubicBezier'}, length:150},
-      physics:{
-        enabled: true,
-        stabilization:{enabled:true, iterations: isLowEnd ? 50 : 200},
-        // Low-end devices: stop physics quickly to free the main thread.
-        adaptiveTimestep: true,
-        timestep: isLowEnd ? 0.5 : 0.35,
-        barnesHut:{gravitationalConstant: -2000, springLength: 150}
-      },
-      interaction:{
-        hover: !isCoarse,
-        tooltipDelay:200,
-        dragView: true,
-        zoomView: true,
-        // Touch-friendlier multi-finger select.
-        multiselect: false
-      },
-      layout:{improvedLayout:!isLowEnd}
-    };
-    if (network) { network.setData(data); network.fit(); }
-    else { network = new vis.Network(container, data, options); }
-
-    // Freeze physics after a beat on low-end devices.
-    if (isLowEnd) network.once('stabilizationIterationsDone', () => network.setOptions({physics:{enabled:false}}));
-
-    network.off('click');
-    network.on('click', function(params){
-      if (!params.nodes.length) return;
-      const nodeId = params.nodes[0];
+    const options = baseNetworkOptions();
+    renderNetwork(container, data, options, function(nodeId){
       if (nodeId.indexOf('file_') === 0) {
         for (const [fileObj, id] of fileNodesMap.entries()) {
           if (id === nodeId) { openDetail(allFiles.indexOf(fileObj)); break; }
@@ -591,21 +635,213 @@
     });
   }
 
+  // -------- UAP topic / keyword co-occurrence network --------
+  // Tokenizes each document's text fields, filters stop-words & noise,
+  // computes per-term frequency and per-pair co-occurrence, then renders
+  // a force-directed graph where:
+  //   node size  ∝ document-frequency of the term (intensity of usage)
+  //   node color = accent if term ∈ UAP lexicon, muted otherwise
+  //   edge width ∝ #docs both terms co-occur in (connectivity intensity)
+  //   edge color shade encodes the same intensity.
+  function tokenize(text){
+    if (!text) return [];
+    // Lowercase, keep letters/digits/hyphen, split on non-word.
+    return String(text).toLowerCase()
+      .replace(/[^a-z0-9\-\s]/g, ' ')
+      .split(/\s+/)
+      .map(t => t.replace(/^-+|-+$/g, ''))
+      .filter(t => t.length >= 3 && t.length <= 32 && !/^\d+$/.test(t) && !STOP_WORDS.has(t));
+  }
+
+  function buildTopicGraph(filtered, container){
+    // Term caps tuned for mobile-low-end devices.
+    const TERM_CAP = isLowEnd ? 30 : 80;
+    const EDGE_CAP = isLowEnd ? 80 : 400;
+    const MIN_DF   = filtered.length >= 40 ? 2 : 1; // ignore singletons in larger corpora
+
+    // 1. Per-document unique-term sets (binary presence for stable co-occurrence).
+    const docTermSets = filtered.map(f => {
+      const blob = [f.title, f.blurb, f.officialBlurb, f.agency].filter(Boolean).join(' ');
+      return new Set(tokenize(blob));
+    });
+
+    // 2. Document frequency per term, with UAP-lexicon boost.
+    const df = new Map();        // term -> raw document frequency
+    const docsForTerm = new Map();// term -> indices of containing docs (for tooltip drill-down)
+    docTermSets.forEach((set, i) => {
+      set.forEach(t => {
+        df.set(t, (df.get(t) || 0) + 1);
+        if (!docsForTerm.has(t)) docsForTerm.set(t, []);
+        docsForTerm.get(t).push(i);
+      });
+    });
+
+    // 3. Rank terms: UAP-lexicon members always preferred at equal frequency.
+    const ranked = [...df.entries()]
+      .filter(([,c]) => c >= MIN_DF)
+      .sort((a,b) => {
+        const aU = UAP_LEXICON.has(a[0]) ? 1 : 0;
+        const bU = UAP_LEXICON.has(b[0]) ? 1 : 0;
+        if (aU !== bU) return bU - aU;
+        return b[1] - a[1];
+      })
+      .slice(0, TERM_CAP);
+
+    if (ranked.length < 2){
+      container.innerHTML = '<div class="graph-loading">Not enough textual content for a topic graph. Try clearing filters.</div>';
+      $('#countInfo').textContent = 'Topic graph: insufficient data';
+      return;
+    } else {
+      container.innerHTML = ''; // clear any prior loading message
+    }
+
+    const keepSet = new Set(ranked.map(r => r[0]));
+    const maxDf   = ranked[0][1];
+
+    // 4. Co-occurrence counts over kept terms only.
+    const pairCounts = new Map(); // "a|b" (a<b) -> count
+    docTermSets.forEach(set => {
+      const local = [...set].filter(t => keepSet.has(t)).sort();
+      for (let i = 0; i < local.length; i++) {
+        for (let j = i + 1; j < local.length; j++) {
+          const key = local[i] + '|' + local[j];
+          pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+        }
+      }
+    });
+
+    // 5. Build node list.
+    const nodes = ranked.map(([t, c]) => {
+      const isPriority = UAP_LEXICON.has(t);
+      const size = 12 + Math.round((c / maxDf) * 28); // 12..40
+      return {
+        id: 'topic_' + t,
+        label: t,
+        value: c,
+        shape: 'dot',
+        size,
+        color: {
+          background: isPriority ? TOPIC_PRIMARY : TOPIC_SECONDARY,
+          border:     isPriority ? '#00a3ff'     : '#3a4353',
+          highlight:  { background:'#00e6b8', border:'#00d4aa' }
+        },
+        font: { color:'#e0e6ed', size: isPriority ? 14 : 12, strokeWidth: 2, strokeColor:'#0b0e11' },
+        title: t + ' — appears in ' + c + ' document' + (c===1?'':'s') + (isPriority ? ' · UAP-priority term' : '')
+      };
+    });
+
+    // 6. Build edge list, keep strongest connections within EDGE_CAP.
+    const allEdges = [...pairCounts.entries()]
+      .map(([k, w]) => { const [a,b] = k.split('|'); return {a, b, w}; })
+      .filter(e => e.w >= MIN_DF)
+      .sort((x, y) => y.w - x.w)
+      .slice(0, EDGE_CAP);
+
+    const maxW = allEdges.length ? allEdges[0].w : 1;
+    const edges = allEdges.map(e => {
+      const intensity = e.w / maxW; // 0..1
+      const width = 1 + intensity * 7;
+      // Color ramps from muted teal to vivid accent as intensity rises.
+      const alpha = 0.35 + intensity * 0.55;
+      return {
+        from:'topic_' + e.a, to:'topic_' + e.b,
+        value: e.w, width,
+        color:{ color:`rgba(0, 212, 170, ${alpha.toFixed(2)})`, highlight:'#00e6b8' },
+        smooth: { type: isLowEnd ? 'continuous' : 'dynamic' },
+        title: `${e.a} ↔ ${e.b} — co-occur in ${e.w} document${e.w===1?'':'s'}`
+      };
+    });
+
+    const priorityCount = nodes.filter(n => n.color.background === TOPIC_PRIMARY).length;
+    $('#countInfo').textContent =
+      `Topic graph: ${nodes.length} terms (${priorityCount} UAP-priority), ${edges.length} co-occurrence links over ${filtered.length} document${filtered.length===1?'':'s'}`;
+
+    const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+    const options = baseNetworkOptions();
+    // Scale node visual area by `value` and edge width by `value`.
+    options.nodes.scaling = { min: 12, max: 40, label:{ enabled:true, min:11, max:18 } };
+    options.edges.scaling = { min: 1,  max: 8 };
+    // A bit more repulsion so dense topic clusters stay readable.
+    options.physics.barnesHut = { gravitationalConstant: -3200, springLength: 140, springConstant: 0.04 };
+
+    renderNetwork(container, data, options, function(nodeId){
+      if (nodeId.indexOf('topic_') !== 0) return;
+      // Click a topic → filter the document list by that keyword for drill-down.
+      const term = nodeId.replace('topic_', '');
+      const input = $('#searchInput');
+      input.value = term;
+      switchView('list');
+      onSearchOrFilter();
+    });
+  }
+
+  function baseNetworkOptions(){
+    return {
+      nodes:{ borderWidth:1, shadow:!isLowEnd },
+      edges:{ smooth:{ type: isLowEnd ? 'continuous' : 'cubicBezier' }, length:150 },
+      physics:{
+        enabled: true,
+        stabilization:{ enabled:true, iterations: isLowEnd ? 50 : 200 },
+        adaptiveTimestep: true,
+        timestep: isLowEnd ? 0.5 : 0.35,
+        barnesHut:{ gravitationalConstant: -2000, springLength: 150 }
+      },
+      interaction:{
+        hover: !isCoarse,
+        tooltipDelay:200,
+        dragView: true,
+        zoomView: true,
+        multiselect: false
+      },
+      layout:{ improvedLayout:!isLowEnd }
+    };
+  }
+
+  function renderNetwork(container, data, options, onNodeClick){
+    if (network) { network.setData(data); network.setOptions(options); network.fit(); }
+    else { network = new vis.Network(container, data, options); }
+
+    // Freeze physics after a beat on low-end devices.
+    if (isLowEnd) network.once('stabilizationIterationsDone', () => network.setOptions({physics:{enabled:false}}));
+
+    network.off('click');
+    network.on('click', function(params){
+      if (!params.nodes.length) return;
+      onNodeClick(params.nodes[0]);
+    });
+  }
+
   function switchView(view){
     currentView = view;
     const listBtn  = $('#listViewBtn'),  graphBtn = $('#graphViewBtn');
     const listDiv  = $('#listContainer'), graphDiv = $('#graphContainer');
+    const modeBar  = $('#graphModeToolbar');
     if (view === 'list') {
       listDiv.style.display='flex';  graphDiv.style.display='none';
+      if (modeBar) modeBar.style.display='none';
       listBtn.classList.add('active');  graphBtn.classList.remove('active');
       listBtn.setAttribute('aria-selected','true');  graphBtn.setAttribute('aria-selected','false');
       renderFiles();
     } else {
       listDiv.style.display='none';  graphDiv.style.display='block';
+      if (modeBar) modeBar.style.display='flex';
       listBtn.classList.remove('active');  graphBtn.classList.add('active');
       listBtn.setAttribute('aria-selected','false');  graphBtn.setAttribute('aria-selected','true');
       buildGraphAndRender();
     }
+  }
+
+  function setGraphMode(mode){
+    if (mode !== 'topics' && mode !== 'agencies') return;
+    graphMode = mode;
+    const t = $('#graphModeTopics'), a = $('#graphModeAgencies');
+    if (t && a){
+      t.classList.toggle('active', mode === 'topics');
+      a.classList.toggle('active', mode === 'agencies');
+      t.setAttribute('aria-selected', mode === 'topics' ? 'true' : 'false');
+      a.setAttribute('aria-selected', mode === 'agencies' ? 'true' : 'false');
+    }
+    if (currentView === 'graph') buildGraphAndRender();
   }
 
   // ---------- WIRE-UP ----------
@@ -632,6 +868,8 @@
   $('#refreshBtn').addEventListener('click', refreshData);
   $('#listViewBtn').addEventListener('click', () => switchView('list'));
   $('#graphViewBtn').addEventListener('click', () => switchView('graph'));
+  $('#graphModeTopics')  .addEventListener('click', () => setGraphMode('topics'));
+  $('#graphModeAgencies').addEventListener('click', () => setGraphMode('agencies'));
   $('#modalOverlay').addEventListener('click', closeModal);
 
   // When tab becomes visible again after being hidden, pull fresh data once.

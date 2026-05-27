@@ -36,7 +36,7 @@
   //  Constants & tiny utilities
   // ────────────────────────────────────────────────────────────────────────
 
-  const DEFAULT_SOURCE     = 'https://war.gov.mirror.invalid/UFO/index.json';
+  const DEFAULT_SOURCE     = '';  // intentionally empty — UI prompts the analyst to configure a source
   const DEFAULT_REFRESH_MS = 30_000;
   const DB_NAME            = 'ufo-intel-widget';
   const DB_VERSION         = 1;
@@ -80,22 +80,27 @@
   const _NONCE = 'ufo-intel/v1';
   const _obfuscate = (s) => {
     if (!s) return '';
-    const out = new Array(s.length);
-    for (let i = 0; i < s.length; i++) {
-      out[i] = String.fromCharCode(s.charCodeAt(i) ^ _NONCE.charCodeAt(i % _NONCE.length));
-    }
-    try { return btoa(unescape(encodeURIComponent(out.join('')))); }
-    catch { return ''; }
+    try {
+      const bytes = new TextEncoder().encode(s);
+      const out   = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) {
+        out[i] = bytes[i] ^ _NONCE.charCodeAt(i % _NONCE.length);
+      }
+      let bin = '';
+      for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+      return btoa(bin);
+    } catch { return ''; }
   };
   const _deobfuscate = (b) => {
     if (!b) return '';
-    let raw;
-    try { raw = decodeURIComponent(escape(atob(b))); } catch { return ''; }
-    const out = new Array(raw.length);
-    for (let i = 0; i < raw.length; i++) {
-      out[i] = String.fromCharCode(raw.charCodeAt(i) ^ _NONCE.charCodeAt(i % _NONCE.length));
-    }
-    return out.join('');
+    try {
+      const bin   = atob(b);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) {
+        bytes[i] = bin.charCodeAt(i) ^ _NONCE.charCodeAt(i % _NONCE.length);
+      }
+      return new TextDecoder().decode(bytes);
+    } catch { return ''; }
   };
 
   const debounce = (fn, ms) => {
@@ -293,11 +298,12 @@
   const LLM = {
     async *openai({ apiKey, model, messages, baseUrl }) {
       const url = (baseUrl || 'https://api.openai.com') + '/v1/chat/completions';
+      const safeKey = String(apiKey || '').replace(/[\r\n\t\0]/g, '').trim();
       const r = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${safeKey}`,
         },
         body: JSON.stringify({ model: model || 'gpt-4o-mini', messages, stream: true }),
       });
@@ -316,11 +322,12 @@
       // Anthropic requires the system prompt to be separated out.
       const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
       const turns  = messages.filter((m) => m.role !== 'system');
+      const safeKey = String(apiKey || '').replace(/[\r\n\t\0]/g, '').trim();
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
+          'x-api-key': safeKey,
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
@@ -801,7 +808,16 @@
 
     async _fetch() {
       const sources = this._sources();
-      if (!sources.length) { this._setStatus('no sources configured', 'error'); return; }
+      if (!sources.length) {
+        this._setStatus('configure a data source in Settings', 'stale');
+        if (!this._state.records.length && this.$.main) {
+          this.$.main.innerHTML =
+            '<h2>Welcome</h2><p style="color:var(--ufo-fg-dim)">' +
+            'No data source configured. Open <strong>Settings</strong> to point the widget at a ' +
+            'JSON, RSS or Atom feed, or use the demo&rsquo;s <em>Load sample dataset</em> button.</p>';
+        }
+        return;
+      }
       this._setStatus('fetching…');
       const all = [];
       let anyOk = false;
@@ -1242,11 +1258,19 @@
 
       // Bar 2: release cadence (releases per ISO week)
       const weeks = new Map();
+      const isoWeek = (dt) => {
+        // ISO-8601 week date — week 1 is the week containing the first Thursday.
+        const d = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+      };
       for (const r of recs) {
         const d = Date.parse(r.releaseDate);
         if (isNaN(d)) continue;
-        const dt = new Date(d);
-        const wk = `${dt.getUTCFullYear()}-W${String(Math.ceil((((dt - new Date(Date.UTC(dt.getUTCFullYear(),0,1)))/86400000) + 1) / 7)).padStart(2,'0')}`;
+        const wk = isoWeek(new Date(d));
         weeks.set(wk, (weeks.get(wk) || 0) + 1);
       }
       const wkArr = [...weeks.entries()].sort((a,b) => a[0].localeCompare(b[0]));

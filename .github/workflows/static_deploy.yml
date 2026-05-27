@@ -17,10 +17,13 @@ on:
       - 'services/web-dashboard/**'
       - 'services/math-engine/**'
       - 'data-schemas/**'
+      - '.github/workflows/static_deploy.yml'
   workflow_dispatch: {}
 
 permissions:
-  contents: write   # required by peaceiris/actions-gh-pages
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages-deploy
@@ -29,6 +32,9 @@ concurrency:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       # -----------------------------------------------------------------
       # 1. Checkout (full history; force_orphan publish needs no history,
@@ -127,12 +133,13 @@ jobs:
           ls -la gh-pages-root | head -20
 
       # -----------------------------------------------------------------
-      # 7. Publish to gh-pages branch.
+      # 7. Upload and deploy to GitHub Pages (official action).
       # -----------------------------------------------------------------
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir:  ./gh-pages-root
-          publish_branch: gh-pages
-          force_orphan: true
+          path: ./gh-pages-root
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

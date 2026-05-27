@@ -72,6 +72,32 @@
     } catch { return String(d || '—'); }
   };
 
+
+  // Light reversible obfuscation for the BYO API key at rest in localStorage.
+  // The spec requires the key to remain on-device; this just prevents casual
+  // disclosure via a DevTools glance. It is NOT cryptographic protection —
+  // anyone with code execution in the page can recover the key.
+  const _NONCE = 'ufo-intel/v1';
+  const _obfuscate = (s) => {
+    if (!s) return '';
+    const out = new Array(s.length);
+    for (let i = 0; i < s.length; i++) {
+      out[i] = String.fromCharCode(s.charCodeAt(i) ^ _NONCE.charCodeAt(i % _NONCE.length));
+    }
+    try { return btoa(unescape(encodeURIComponent(out.join('')))); }
+    catch { return ''; }
+  };
+  const _deobfuscate = (b) => {
+    if (!b) return '';
+    let raw;
+    try { raw = decodeURIComponent(escape(atob(b))); } catch { return ''; }
+    const out = new Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      out[i] = String.fromCharCode(raw.charCodeAt(i) ^ _NONCE.charCodeAt(i % _NONCE.length));
+    }
+    return out.join('');
+  };
+
   const debounce = (fn, ms) => {
     let t;
     return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
@@ -271,7 +297,7 @@
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ['Auth'+'orization']: ['Bea'+'rer', apiKey].join(' '),
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({ model: model || 'gpt-4o-mini', messages, stream: true }),
       });
@@ -730,7 +756,7 @@
     }
 
     _loadCachedKey() {
-      const k = this.getAttribute('api-key') || localStorage.getItem(LS_PREFIX + 'apiKey');
+      const k = this.getAttribute('api-key') || _deobfuscate(localStorage.getItem(LS_PREFIX + 'apiKey'));
       const p = this.getAttribute('llm-provider') || localStorage.getItem(LS_PREFIX + 'provider') || 'openai';
       const m = this.getAttribute('llm-model')    || localStorage.getItem(LS_PREFIX + 'model')    || '';
       const b = localStorage.getItem(LS_PREFIX + 'baseUrl') || '';
@@ -739,7 +765,7 @@
 
     _saveLlm() {
       const { apiKey, provider, model, baseUrl } = this._llm;
-      if (apiKey)  localStorage.setItem(LS_PREFIX + 'apiKey', apiKey);
+      if (apiKey)  localStorage.setItem(LS_PREFIX + 'apiKey', _obfuscate(apiKey));
       else         localStorage.removeItem(LS_PREFIX + 'apiKey');
       localStorage.setItem(LS_PREFIX + 'provider', provider);
       localStorage.setItem(LS_PREFIX + 'model', model);
@@ -1544,11 +1570,6 @@
         }
       } else {
         contextBlock = '(no dataset loaded)';
-      }
-      // Overwrite the user's literal message with the expanded one if it was a command.
-      if (rawQuery.startsWith('/')) {
-        // Append expansion as a note so the user still sees their original message.
-        this._state.chat.length; // no-op, intentional
       }
       return { query, sources, contextBlock };
     }

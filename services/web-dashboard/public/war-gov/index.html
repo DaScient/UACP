@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e11">
+<meta name="description" content="WAR.GOV/UFO live analytic dashboard — mirrored, searchable, mobile-first view of the U.S. Department of War PURSUE program declassified UAP releases.">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>WAR.GOV/UFO — Live Analytic Dashboard · UACP</title>
+<link rel="canonical" href="https://dascient.github.io/UACP/war-gov/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%2300d4aa'/%3E%3C/svg%3E">
+<!--
+  vis-network is loaded lazily on first switch to graph view to keep
+  mobile-low-end-device first-paint cheap (~600 KB script saved).
+-->
+<style>
+  :root {
+    --bg: #0b0e11;
+    --surface: #14181f;
+    --surface2: #1a1f28;
+    --border: #2a303c;
+    --text: #b8c5d6;
+    --text2: #7a8798;
+    --accent: #00d4aa;
+    --accent2: #00a3ff;
+    --warn: #f0b90b;
+    --danger: #f6465d;
+    --font: 'Inter', system-ui, -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    --radius: 6px;
+    --shadow: 0 2px 8px rgba(0,0,0,.3);
+    --tap: 44px; /* iOS/Android minimum recommended touch target */
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{-webkit-text-size-adjust:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:1.5;min-height:100vh;overflow-x:hidden}
+  body::before{content:'';position:fixed;top:0;left:0;width:100%;height:100%;background:radial-gradient(ellipse at 50% 0%, rgba(0,212,170,.03) 0%, transparent 60%);pointer-events:none;z-index:0}
+  .app{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+  @media(min-width:700px){.app{padding:16px;gap:16px}}
+
+  /* HUB BACK-LINK */
+  .hub-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);text-decoration:none;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);width:fit-content;min-height:32px}
+  .hub-link:hover,.hub-link:focus{color:var(--accent);border-color:var(--accent)}
+
+  /* HEADER */
+  .header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+  @media(min-width:700px){.header{padding:16px 20px;gap:12px}}
+  .header-left{display:flex;align-items:center;gap:10px;min-width:0}
+  .logo{width:36px;height:36px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#000;font-family:var(--mono);flex-shrink:0}
+  .title{font-size:15px;font-weight:700;letter-spacing:-0.3px;line-height:1.2}
+  @media(min-width:700px){.title{font-size:18px}}
+  .title span{color:var(--accent)}
+  .status{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);margin-top:2px}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+  .status-dot.error{background:var(--danger)}
+  .status-dot.warn{background:var(--warn)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .header-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0 14px;min-height:var(--tap);border-radius:var(--radius);cursor:pointer;font-size:13px;transition:.2s;white-space:nowrap;font-family:inherit;display:inline-flex;align-items:center;justify-content:center}
+  .btn:hover,.btn:focus{background:#242b36;border-color:#3a4353;outline:none}
+  .btn-accent{background:var(--accent);color:#000;border-color:var(--accent);font-weight:600}
+  .btn-accent:hover,.btn-accent:focus{background:#00e6b8}
+
+  /* TICKER */
+  .ticker-wrap{overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;position:relative}
+  .ticker-label{position:absolute;left:14px;top:50%;transform:translateY(-50%);background:var(--accent);color:#000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;z-index:1;font-family:var(--mono);letter-spacing:.5px}
+  .ticker{overflow:hidden;white-space:nowrap;padding-left:74px}
+  .ticker-track{display:inline-block;animation:scroll 40s linear infinite;will-change:transform}
+  .ticker-item{display:inline-block;margin-right:48px;color:var(--text2);font-size:13px}
+  .ticker-item strong{color:var(--accent)}
+  @keyframes scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+  /* Respect user reduced-motion preference and save battery on low-end devices */
+  @media(prefers-reduced-motion:reduce){
+    .ticker-track{animation:none}
+    .status-dot{animation:none}
+  }
+
+  /* GRID */
+  .grid{display:grid;grid-template-columns:1fr;gap:12px;min-height:0}
+  @media(min-width:900px){.grid{grid-template-columns:280px 1fr;gap:16px}}
+
+  /* SIDEBAR */
+  .sidebar{display:flex;flex-direction:column;gap:12px}
+  @media(min-width:900px){.sidebar{gap:16px}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+  @media(min-width:700px){.card{padding:16px}}
+  .card-title{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text2);margin-bottom:10px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .card-title .collapse-icon{font-size:10px;color:var(--text2);transition:transform .2s}
+  .card[data-collapsed="true"] .collapse-icon{transform:rotate(-90deg)}
+  .card[data-collapsed="true"] .card-body{display:none}
+  .stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .stat-row:last-child{border-bottom:none}
+  .stat-val{font-weight:600;color:var(--accent);font-family:var(--mono)}
+  .stat-val.big{font-size:22px;display:block;line-height:1}
+  .agency-tag{display:inline-block;background:var(--surface2);padding:6px 10px;border-radius:3px;font-size:12px;margin:2px;cursor:pointer;border:1px solid transparent;transition:.2s;min-height:30px;line-height:18px}
+  .agency-tag:hover,.agency-tag:focus{border-color:var(--accent);color:var(--accent);outline:none}
+  .agency-tag.active{background:var(--accent);color:#000;border-color:var(--accent)}
+
+  /* MAIN + GRAPH TOGGLE */
+  .main{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .search{flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0 12px;min-height:var(--tap);border-radius:var(--radius);font-size:14px;outline:none;font-family:inherit}
+  .search:focus{border-color:var(--accent)}
+  .count-info{font-size:12px;color:var(--text2);width:100%}
+  @media(min-width:700px){.count-info{width:auto}}
+  .view-toggle{display:flex;gap:6px}
+  .view-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0 14px;min-height:var(--tap);border-radius:var(--radius);cursor:pointer;font-size:12px;font-family:inherit;display:inline-flex;align-items:center}
+  .view-btn.active{background:var(--accent);color:#000;border-color:var(--accent)}
+
+  /* FILE LIST */
+  .file-list{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 280px);overflow-y:auto;padding-right:4px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  @media(min-width:900px){.file-list{max-height:70vh}}
+  .file-list::-webkit-scrollbar{width:4px}
+  .file-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+  .file-item{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;cursor:pointer;transition:.2s;position:relative}
+  .file-item:hover,.file-item:focus{border-color:var(--accent);background:#1e2530;outline:none}
+  .file-item.new{border-left:3px solid var(--accent)}
+  .file-item .badge{position:absolute;top:8px;right:12px;background:var(--accent);color:#000;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600}
+  .file-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+  .file-agency{background:var(--surface);padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;color:var(--accent2)}
+  .file-date{font-size:11px;color:var(--text2)}
+  .file-title{font-weight:600;font-size:14px;margin-bottom:4px;color:#e0e6ed;word-break:break-word}
+  .file-blurb{font-size:12px;color:var(--text2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .file-link{color:var(--accent);font-size:12px;text-decoration:none;margin-top:8px;display:inline-block;min-height:28px;padding:4px 0}
+  .file-link:hover,.file-link:focus{text-decoration:underline}
+
+  /* GRAPH CONTAINER */
+  .graph-container{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);height:60vh;min-height:360px;width:100%;position:relative;overflow:hidden;touch-action:none}
+  @media(min-width:900px){.graph-container{height:70vh}}
+  #mynetwork{width:100%;height:100%;background:var(--surface2)}
+  .graph-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--text2);font-size:13px;background:var(--surface2)}
+
+  /* MODAL */
+  .modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:center;justify-content:center;padding:12px}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);max-width:700px;width:100%;max-height:85vh;overflow-y:auto;padding:20px;position:relative;-webkit-overflow-scrolling:touch}
+  .modal-close{position:absolute;top:8px;right:12px;background:none;border:none;color:var(--text2);font-size:28px;cursor:pointer;line-height:1;min-width:var(--tap);min-height:var(--tap);display:flex;align-items:center;justify-content:center}
+  .modal-close:hover,.modal-close:focus{color:var(--text);outline:none}
+  .modal h2{font-size:16px;margin-bottom:12px;word-break:break-word}
+  .modal .file-blurb{display:block;-webkit-line-clamp:unset;overflow:visible;margin-bottom:12px}
+  .modal a{color:var(--accent);word-break:break-all}
+
+  .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text2);gap:8px}
+  .spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){.spinner{animation-duration:1.5s}}
+  .footer{text-align:center;padding:14px 8px;color:var(--text2);font-size:11px;border-top:1px solid var(--border);margin-top:4px;line-height:1.8}
+  .footer a{color:var(--accent);text-decoration:none}
+  .footer a:hover,.footer a:focus{text-decoration:underline}
+  .empty-state{text-align:center;padding:40px;color:var(--text2)}
+  /* Visually hidden but available to screen readers */
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style>
+</head>
+<body>
+<div class="app">
+  <a href="../" class="hub-link" aria-label="Back to UAP Intelligence Hub">← UAP Intelligence Hub</a>
+
+  <header class="header">
+    <div class="header-left">
+      <div class="logo" aria-hidden="true">W</div>
+      <div>
+        <div class="title">WAR.GOV/<span>UFO</span> — Live Analytic Dashboard</div>
+        <div class="status"><span class="status-dot" id="statusDot" aria-hidden="true"></span><span id="statusText">Initializing…</span></div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn" type="button" id="refreshBtn">Refresh</button>
+      <a class="btn btn-accent" href="https://www.war.gov/UFO" target="_blank" rel="noopener noreferrer">Open Source</a>
+    </div>
+  </header>
+
+  <div class="ticker-wrap" aria-live="polite" aria-atomic="false">
+    <div class="ticker-label">LATEST</div>
+    <div class="ticker" id="ticker"><div class="ticker-track" id="tickerTrack"></div></div>
+  </div>
+
+  <div class="grid">
+    <aside class="sidebar" aria-label="Filters and stats">
+      <div class="card" id="statsCard">
+        <div class="card-title" role="button" tabindex="0" aria-expanded="true" data-toggle="statsCard">
+          <span>Repository Stats</span><span class="collapse-icon" aria-hidden="true">▾</span>
+        </div>
+        <div class="card-body">
+          <div class="stat-row"><span>PDF Documents</span><span class="stat-val" id="statPDF">--</span></div>
+          <div class="stat-row"><span>Images</span><span class="stat-val" id="statIMG">--</span></div>
+          <div class="stat-row"><span>Video Exhibits</span><span class="stat-val" id="statVID">--</span></div>
+          <div class="stat-row"><span>Total Assets</span><span class="stat-val big" id="statTotal">--</span></div>
+          <div class="stat-row"><span>Release</span><span class="stat-val" id="statRel">--</span></div>
+        </div>
+      </div>
+
+      <div class="card" id="agencyCard">
+        <div class="card-title" role="button" tabindex="0" aria-expanded="true" data-toggle="agencyCard">
+          <span>Filter by Agency</span><span class="collapse-icon" aria-hidden="true">▾</span>
+        </div>
+        <div class="card-body"><div id="agencyFilters"></div></div>
+      </div>
+
+      <div class="card" id="sourceCard">
+        <div class="card-title" role="button" tabindex="0" aria-expanded="true" data-toggle="sourceCard">
+          <span>Data Source</span><span class="collapse-icon" aria-hidden="true">▾</span>
+        </div>
+        <div class="card-body" style="font-size:12px;color:var(--text2);word-break:break-all">
+          <div>Mirror: <span id="sourceUrl" style="color:var(--accent)">--</span></div>
+          <div style="margin-top:4px">Origin: <a href="https://www.war.gov/UFO" target="_blank" rel="noopener noreferrer" style="color:var(--accent2)">war.gov/UFO</a></div>
+          <div style="margin-top:6px;font-size:11px;color:var(--danger)">Direct origin access blocked by Akamai. Using verified mirror.</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar" role="search">
+        <label for="searchInput" class="sr-only">Search files</label>
+        <input type="search" class="search" placeholder="Search files…" id="searchInput" autocomplete="off" inputmode="search">
+        <div class="view-toggle" role="tablist" aria-label="View mode">
+          <button class="view-btn active" id="listViewBtn" type="button" role="tab" aria-selected="true">📋 List</button>
+          <button class="view-btn" id="graphViewBtn" type="button" role="tab" aria-selected="false">🕸️ Graph</button>
+        </div>
+        <span class="count-info" id="countInfo" aria-live="polite"></span>
+      </div>
+
+      <div id="listContainer" class="file-list" role="region" aria-label="Document list">
+        <div class="loading"><div class="spinner" aria-hidden="true"></div> Loading data…</div>
+      </div>
+
+      <div id="graphContainer" class="graph-container" style="display:none" role="region" aria-label="Agency / document network graph">
+        <div id="mynetwork"></div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    Data sourced from U.S. Department of War PURSUE program via public mirror. ·
+    <a href="https://www.war.gov/UFO" target="_blank" rel="noopener noreferrer">Official Site</a> ·
+    Last refresh: <span id="lastRefresh">--</span> ·
+    Next refresh in <span id="countdown">30</span>s
+  </footer>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+// ====================================================================
+// WAR.GOV/UFO Live Analytic Dashboard
+// Mobile-low-end-device first; desktop / high-compute gracefully scales up.
+// ====================================================================
+(function(){
+  'use strict';
+
+  // ---------- DEVICE-CAPABILITY DETECTION ----------
+  // Used to decide whether to load vis-network, how aggressive graph physics
+  // should be, and whether to lower refresh frequency.
+  const cores      = (navigator.hardwareConcurrency || 2);
+  const memGB      = (navigator.deviceMemory || 2);
+  const conn       = navigator.connection || {};
+  const saveData   = !!conn.saveData;
+  const slowNet    = /^(slow-2g|2g|3g)$/.test(conn.effectiveType || '');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isLowEnd   = cores <= 4 || memGB <= 2 || saveData || slowNet;
+  const isCoarse   = window.matchMedia('(pointer: coarse)').matches;
+
+  // ---------- CONFIG ----------
+  const PRIMARY_SOURCE  = 'https://war-gov-ufo-release-1.vercel.app/data.json';
+  const FALLBACK_SOURCE = 'https://raw.githubusercontent.com/vng9trmgr8-pixel/war-gov-ufo-release-1/main/data.json';
+  // Refresh less aggressively on low-end / slow / battery-saver devices.
+  const REFRESH_INTERVAL = (isLowEnd || saveData) ? 90000 : 30000;
+  const VIS_NETWORK_URL  = 'https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js';
+
+  // ---------- STATE ----------
+  let allFiles = [];
+  let lastDataHash = null, previousFileCount = 0, selectedAgency = null;
+  let refreshTimer = null, countdownTimer = null, secondsLeft = REFRESH_INTERVAL/1000;
+  let currentView = 'list';
+  let network = null;
+  let visLoadPromise = null;
+
+  // ---------- HELPERS ----------
+  const $ = sel => document.querySelector(sel);
+  function hashCode(str){let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0;}return h.toString();}
+  function formatTime(d){return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+  function formatDate(ds){return (!ds||ds==='N/A')?'N/A':ds;}
+  function escapeHtml(str){
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+  function safeUrl(u){
+    if (!u) return '';
+    try {
+      const url = new URL(u, window.location.href);
+      if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+    } catch(e){}
+    return '';
+  }
+  function debounce(fn, ms){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>fn.apply(this,a),ms);};}
+
+  // ---------- DATA LOAD ----------
+  async function fetchData(url){
+    const ctrl = new AbortController();
+    const tmo  = setTimeout(()=>ctrl.abort(), 15000);
+    try {
+      const r = await fetch(url, {cache:'no-cache', signal: ctrl.signal, mode:'cors'});
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      return await r.json();
+    } finally { clearTimeout(tmo); }
+  }
+
+  async function loadData(silent){
+    updateStatus('warn','Fetching…');
+    let data=null, sourceUsed='';
+    try { data = await fetchData(PRIMARY_SOURCE); sourceUsed = PRIMARY_SOURCE; }
+    catch(e){
+      try { data = await fetchData(FALLBACK_SOURCE); sourceUsed = FALLBACK_SOURCE; }
+      catch(e2){
+        updateStatus('error','Connection failed');
+        if (!silent) $('#listContainer').innerHTML='<div class="empty-state">Unable to fetch data. Will retry automatically.</div>';
+        return;
+      }
+    }
+    const files = (data.pdfs   || []).map(f=>({...f,type:'pdf'}))
+            .concat((data.images || []).map(f=>({...f,type:'image'})))
+            .concat((data.videos || []).map(f=>({...f,type:'video'})));
+    const hash = hashCode(JSON.stringify(files));
+    const isNew = lastDataHash !== null && lastDataHash !== hash;
+    const newCount = files.length - previousFileCount;
+    if (isNew && newCount > 0 && !silent) notifyUpdate(newCount);
+    allFiles = files; lastDataHash = hash; previousFileCount = files.length;
+
+    updateStats(data); updateAgencyFilters();
+    if (currentView === 'list') renderFiles(); else buildGraphAndRender();
+    updateStatus('ok','Live');
+    $('#lastRefresh').textContent = formatTime(new Date());
+    $('#sourceUrl').textContent   = sourceUsed.replace(/^https?:\/\//,'');
+    secondsLeft = REFRESH_INTERVAL/1000; updateCountdown();
+    updateTicker(data);
+  }
+
+  function updateStatus(state,text){
+    const d = $('#statusDot');
+    d.className = 'status-dot';
+    if (state === 'error') d.classList.add('error');
+    if (state === 'warn')  d.classList.add('warn');
+    $('#statusText').textContent = text;
+  }
+  function updateStats(data){
+    const pdf = (data.counts && data.counts.pdfs)   || (data.pdfs   && data.pdfs.length)   || 0;
+    const img = (data.counts && data.counts.images) || (data.images && data.images.length) || 0;
+    const vid = (data.counts && data.counts.videos) || (data.videos && data.videos.length) || 0;
+    $('#statPDF').textContent   = pdf;
+    $('#statIMG').textContent   = img;
+    $('#statVID').textContent   = vid;
+    $('#statTotal').textContent = pdf + img + vid;
+    $('#statRel').textContent   = data.release || '01';
+  }
+  function updateAgencyFilters(){
+    const agencies = [...new Set(allFiles.map(f=>f.agency).filter(Boolean))].sort();
+    const container = $('#agencyFilters');
+    container.innerHTML = '';
+    agencies.forEach(a => {
+      const el = document.createElement('span');
+      el.className = 'agency-tag' + (selectedAgency === a ? ' active' : '');
+      el.setAttribute('role','button');
+      el.setAttribute('tabindex','0');
+      el.textContent = a;
+      el.addEventListener('click', () => filterByAgency(a));
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); filterByAgency(a); } });
+      container.appendChild(el);
+    });
+  }
+  function filterByAgency(agency){
+    selectedAgency = (selectedAgency === agency) ? null : agency;
+    updateAgencyFilters();
+    onSearchOrFilter();
+  }
+  function onSearchOrFilter(){
+    if (currentView === 'list') renderFiles(); else buildGraphAndRender();
+  }
+  function renderFiles(){
+    const term = $('#searchInput').value.toLowerCase();
+    let filtered = allFiles;
+    if (selectedAgency) filtered = filtered.filter(f => f.agency === selectedAgency);
+    if (term) filtered = filtered.filter(f =>
+      (f.title||'').toLowerCase().includes(term) ||
+      (f.agency||'').toLowerCase().includes(term) ||
+      (f.blurb||'').toLowerCase().includes(term) ||
+      (f.officialBlurb||'').toLowerCase().includes(term)
+    );
+    $('#countInfo').textContent = `Showing ${filtered.length} of ${allFiles.length} files`;
+    const c = $('#listContainer');
+    if (filtered.length === 0){ c.innerHTML = '<div class="empty-state">No matches.</div>'; return; }
+    // Build DOM safely (no innerHTML concatenation with user-supplied strings).
+    const frag = document.createDocumentFragment();
+    filtered.forEach((f, i) => {
+      const isNew = i < (allFiles.length - previousFileCount) && previousFileCount > 0;
+      const blurb = f.blurb || f.officialBlurb || 'No description.';
+      const item = document.createElement('div');
+      item.className = 'file-item' + (isNew ? ' new' : '');
+      item.setAttribute('role','button');
+      item.setAttribute('tabindex','0');
+      const idx = allFiles.indexOf(f);
+      item.addEventListener('click', () => openDetail(idx));
+      item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(idx); } });
+
+      let html = '';
+      if (isNew) html += '<span class="badge">NEW</span>';
+      html += '<div class="file-meta">'
+        + '<span class="file-agency">' + escapeHtml(f.agency || 'Unknown') + '</span>'
+        + '<span class="file-date">'   + escapeHtml(formatDate(f.releaseDate)) + '</span>'
+        + (f.type ? '<span style="font-size:11px;color:var(--text2)">' + escapeHtml(String(f.type).toUpperCase()) + '</span>' : '')
+        + '</div>'
+        + '<div class="file-title">' + escapeHtml(f.title || 'Untitled') + '</div>'
+        + '<div class="file-blurb">' + escapeHtml(blurb) + '</div>';
+      const url = safeUrl(f.url);
+      if (url) html += '<a class="file-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">View Original →</a>';
+      item.innerHTML = html;
+      // Prevent the inner anchor click from also triggering the item click.
+      const link = item.querySelector('.file-link');
+      if (link) link.addEventListener('click', e => e.stopPropagation());
+      frag.appendChild(item);
+    });
+    c.innerHTML = '';
+    c.appendChild(frag);
+  }
+  function updateTicker(data){
+    const headlines = [
+      `Release ${data.release || '01'} — ${data.releaseDate || 'May 2026'} — ${
+        ((data.counts && data.counts.pdfs)   || 0)
+      + ((data.counts && data.counts.images) || 0)
+      + ((data.counts && data.counts.videos) || 0)
+      } total assets`
+    ];
+    if (data.pdfs && data.pdfs.length) {
+      const ag = [...new Set(data.pdfs.map(p=>p.agency).filter(Boolean))];
+      headlines.push(`Agencies: ${ag.slice(0,6).join(', ')}${ag.length>6?'…':''}`);
+    }
+    headlines.push('Rolling releases — new tranches', 'PURSUE: Presidential Unsealing System');
+    const track = $('#tickerTrack');
+    track.innerHTML = '';
+    const make = h => { const s = document.createElement('span'); s.className='ticker-item'; s.textContent = h; return s; };
+    // Duplicate the strip so the CSS animation seamlessly wraps.
+    headlines.forEach(h => track.appendChild(make(h)));
+    headlines.forEach(h => track.appendChild(make(h)));
+  }
+  function notifyUpdate(count){
+    const h = $('.header');
+    h.style.boxShadow = '0 0 20px rgba(0,212,170,0.3)';
+    setTimeout(()=> h.style.boxShadow = '', 2000);
+  }
+  function updateCountdown(){ $('#countdown').textContent = secondsLeft; }
+  function refreshData(){ loadData(false); }
+  function startAutoRefresh(){
+    if (refreshTimer)   clearInterval(refreshTimer);
+    if (countdownTimer) clearInterval(countdownTimer);
+    refreshTimer = setInterval(()=> {
+      // Pause auto-refresh while the tab is backgrounded (saves battery).
+      if (document.hidden) return;
+      loadData(true);
+    }, REFRESH_INTERVAL);
+    countdownTimer = setInterval(()=>{
+      if (document.hidden) return;
+      secondsLeft--; if (secondsLeft <= 0) secondsLeft = REFRESH_INTERVAL/1000;
+      updateCountdown();
+    }, 1000);
+  }
+  function openDetail(idx){
+    const f = allFiles[idx]; if (!f) return;
+    const blurb = f.blurb || f.officialBlurb || 'No description.';
+    const url   = safeUrl(f.url);
+    let html = '<button class="modal-close" type="button" aria-label="Close" id="modalCloseBtn">&times;</button>'
+      + '<span class="file-agency" style="margin-bottom:8px;display:inline-block">' + escapeHtml(f.agency || 'Unknown') + '</span>'
+      + '<h2 id="modalTitle">' + escapeHtml(f.title || 'Untitled') + '</h2>'
+      + '<div style="font-size:12px;color:var(--text2);margin-bottom:12px">Release: ' + escapeHtml(formatDate(f.releaseDate)) + ' · ' + escapeHtml(String(f.type || 'pdf').toUpperCase()) + '</div>'
+      + '<div class="file-blurb" style="display:block;">' + escapeHtml(blurb) + '</div>';
+    if (url) html += '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Open Original →</a>';
+    $('#modalContent').innerHTML = html;
+    $('#modalOverlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    const closeBtn = document.getElementById('modalCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  }
+  function closeModal(e){
+    if (e && e.target && e.target.id && e.target.id !== 'modalOverlay' && e.target.id !== 'modalCloseBtn') return;
+    $('#modalOverlay').style.display = 'none';
+    document.body.style.overflow = '';
+  }
+
+  // ---------- GRAPH (lazy-loaded vis-network) ----------
+  function loadVisNetwork(){
+    if (window.vis && window.vis.Network) return Promise.resolve();
+    if (visLoadPromise) return visLoadPromise;
+    visLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = VIS_NETWORK_URL;
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+      s.onload  = () => resolve();
+      s.onerror = () => { visLoadPromise = null; reject(new Error('Failed to load vis-network')); };
+      document.head.appendChild(s);
+    });
+    return visLoadPromise;
+  }
+
+  async function buildGraphAndRender(){
+    if (!allFiles.length) return;
+    const container = document.getElementById('mynetwork');
+    // Show loader while the heavy library is being fetched on first switch.
+    if (!window.vis || !window.vis.Network) {
+      container.innerHTML = '<div class="graph-loading"><div class="spinner"></div> Loading graph engine…</div>';
+      try { await loadVisNetwork(); }
+      catch(err){
+        container.innerHTML = '<div class="graph-loading" style="color:var(--danger)">Graph engine unavailable. Check your connection.</div>';
+        return;
+      }
+      container.innerHTML = '';
+    }
+
+    const term = $('#searchInput').value.toLowerCase();
+    let filtered = allFiles;
+    if (selectedAgency) filtered = filtered.filter(f => f.agency === selectedAgency);
+    if (term) filtered = filtered.filter(f =>
+      (f.title||'').toLowerCase().includes(term) ||
+      (f.agency||'').toLowerCase().includes(term) ||
+      (f.blurb||'').toLowerCase().includes(term));
+
+    // Cap nodes on low-end devices to keep the layout responsive.
+    const NODE_CAP = isLowEnd ? 120 : 800;
+    const capped   = filtered.slice(0, NODE_CAP);
+
+    const nodes = [], edges = [], agencySet = new Set(), fileNodesMap = new Map();
+    capped.forEach(f => { if (f.agency) agencySet.add(f.agency); });
+    agencySet.forEach(agency => {
+      nodes.push({
+        id:'agency_' + agency, label:agency, group:'agency', shape:'dot', size:20,
+        color:{background:'#00d4aa', border:'#00a3ff'}, font:{color:'white', size:14}
+      });
+    });
+    capped.forEach((f, idx) => {
+      const fileId = 'file_' + idx + '_' + ((f.title||'').slice(0,20));
+      nodes.push({
+        id:fileId, label:(f.title||'Untitled').slice(0,40), group:'file', shape:'box', size:15,
+        color:{background:'#3a6ea5', border:'#88c0ff'}, font:{color:'#eee', size:12},
+        title:(f.agency || '?') + ': ' + (f.title || '')
+      });
+      fileNodesMap.set(f, fileId);
+      if (f.agency) edges.push({from:fileId, to:'agency_' + f.agency, arrows:'to', color:{color:'#7a8798'}, smooth:true});
+    });
+    const truncNote = filtered.length > capped.length ? ` (showing first ${capped.length} for performance)` : '';
+    $('#countInfo').textContent = `Graph: ${agencySet.size} agencies, ${capped.length} documents${truncNote}`;
+
+    const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+    const options = {
+      nodes:{borderWidth:1, shadow:!isLowEnd},
+      edges:{smooth:{type: isLowEnd ? 'continuous' : 'cubicBezier'}, length:150},
+      physics:{
+        enabled: true,
+        stabilization:{enabled:true, iterations: isLowEnd ? 50 : 200},
+        // Low-end devices: stop physics quickly to free the main thread.
+        adaptiveTimestep: true,
+        timestep: isLowEnd ? 0.5 : 0.35,
+        barnesHut:{gravitationalConstant: -2000, springLength: 150}
+      },
+      interaction:{
+        hover: !isCoarse,
+        tooltipDelay:200,
+        dragView: true,
+        zoomView: true,
+        // Touch-friendlier multi-finger select.
+        multiselect: false
+      },
+      layout:{improvedLayout:!isLowEnd}
+    };
+    if (network) { network.setData(data); network.fit(); }
+    else { network = new vis.Network(container, data, options); }
+
+    // Freeze physics after a beat on low-end devices.
+    if (isLowEnd) network.once('stabilizationIterationsDone', () => network.setOptions({physics:{enabled:false}}));
+
+    network.off('click');
+    network.on('click', function(params){
+      if (!params.nodes.length) return;
+      const nodeId = params.nodes[0];
+      if (nodeId.indexOf('file_') === 0) {
+        for (const [fileObj, id] of fileNodesMap.entries()) {
+          if (id === nodeId) { openDetail(allFiles.indexOf(fileObj)); break; }
+        }
+      } else if (nodeId.indexOf('agency_') === 0) {
+        filterByAgency(nodeId.replace('agency_',''));
+        switchView('list');
+      }
+    });
+  }
+
+  function switchView(view){
+    currentView = view;
+    const listBtn  = $('#listViewBtn'),  graphBtn = $('#graphViewBtn');
+    const listDiv  = $('#listContainer'), graphDiv = $('#graphContainer');
+    if (view === 'list') {
+      listDiv.style.display='flex';  graphDiv.style.display='none';
+      listBtn.classList.add('active');  graphBtn.classList.remove('active');
+      listBtn.setAttribute('aria-selected','true');  graphBtn.setAttribute('aria-selected','false');
+      renderFiles();
+    } else {
+      listDiv.style.display='none';  graphDiv.style.display='block';
+      listBtn.classList.remove('active');  graphBtn.classList.add('active');
+      listBtn.setAttribute('aria-selected','false');  graphBtn.setAttribute('aria-selected','true');
+      buildGraphAndRender();
+    }
+  }
+
+  // ---------- WIRE-UP ----------
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal({target:{id:'modalOverlay'}});
+    if (e.ctrlKey && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); refreshData(); }
+    if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); $('#searchInput').focus(); }
+  });
+
+  // Collapsible cards (saves vertical space on mobile).
+  document.querySelectorAll('[data-toggle]').forEach(el => {
+    const targetId = el.getAttribute('data-toggle');
+    const toggle = () => {
+      const card = document.getElementById(targetId);
+      const collapsed = card.getAttribute('data-collapsed') === 'true';
+      card.setAttribute('data-collapsed', collapsed ? 'false' : 'true');
+      el.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+    };
+    el.addEventListener('click', toggle);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  });
+
+  $('#searchInput').addEventListener('input', debounce(onSearchOrFilter, 150));
+  $('#refreshBtn').addEventListener('click', refreshData);
+  $('#listViewBtn').addEventListener('click', () => switchView('list'));
+  $('#graphViewBtn').addEventListener('click', () => switchView('graph'));
+  $('#modalOverlay').addEventListener('click', closeModal);
+
+  // When tab becomes visible again after being hidden, pull fresh data once.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && allFiles.length) loadData(true);
+  });
+
+  // Re-fit graph on resize / orientation change.
+  let resizeT;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => { if (currentView === 'graph' && network) network.fit(); }, 200);
+  });
+
+  // Initial load.
+  loadData(false).then(() => { startAutoRefresh(); switchView('list'); });
+})();
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@ export default function HomePage() {
           Multi-station parallax + multi-modal classification, fully open-source.
         </p>
       </header>
-      <ClassificationViewer wasmModulePath="/wasm-engine/uacp_math_engine.js" />
+      <ClassificationViewer wasmModulePath="/UACP/wasm-engine/uacp_math_engine.js" />
     </main>
   );
 }

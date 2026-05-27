@@ -4,5 +4,8 @@ const nextConfig = {
   output: 'export',
   images: { unoptimized: true },
   trailingSlash: true,
+  // GitHub Pages project sites are served under /<repo-name>/
+  basePath: '/UACP',
+  assetPrefix: '/UACP/',
 };
 module.exports = nextConfig;

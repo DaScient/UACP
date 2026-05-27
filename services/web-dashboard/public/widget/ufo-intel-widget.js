@@ -298,7 +298,7 @@
   const LLM = {
     async *openai({ apiKey, model, messages, baseUrl }) {
       const url = (baseUrl || 'https://api.openai.com') + '/v1/chat/completions';
-      const safeKey = String(apiKey || '').replace(/[\r\n\t\0]/g, '').trim();
+      const safeKey = String(apiKey || '').replace(/[\r\n\t\v\f\0\x00-\x1f\x7f]/g, '').trim();
       const r = await fetch(url, {
         method: 'POST',
         headers: {
@@ -322,7 +322,7 @@
       // Anthropic requires the system prompt to be separated out.
       const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
       const turns  = messages.filter((m) => m.role !== 'system');
-      const safeKey = String(apiKey || '').replace(/[\r\n\t\0]/g, '').trim();
+      const safeKey = String(apiKey || '').replace(/[\r\n\t\v\f\0\x00-\x1f\x7f]/g, '').trim();
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
